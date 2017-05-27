@@ -1,0 +1,6 @@
+ReaxFF
+1- unit test- added forces in PDB file, which will be tested 
+2- atomic add remove
+3- check omp scalability, if possible improve it 
+4- MPI-IO for rxmd
+5- Introduce changes made by Patrick into current code. 
