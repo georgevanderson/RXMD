@@ -6,6 +6,9 @@ implicit none
 integer :: i,it1,it2,irt,provided
 real(8) :: ctmp, dr(3)
 
+type(forcefield_params) :: ffp
+type(atom_vars) :: av
+
 !call MPI_INIT(ierr)
 call MPI_INIT_THREAD(MPI_THREAD_SERIALIZED,provided,ierr)
 call MPI_COMM_RANK(MPI_COMM_WORLD, myid, ierr)
@@ -14,15 +17,15 @@ call MPI_COMM_SIZE(MPI_COMM_WORLD, nprocs, ierr)
 if(myid==0)  print'(a30)', 'rxmd has started'
 
 !--- read ffield file
-CALL GETPARAMS(FFPath,FFDescript)
+CALL GETPARAMS(ffp, FFPath, FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(atype, pos, v, f, q)
+CALL INITSYSTEM(ffp, av)
 
-if(mdmode==10) call ConjugateGradient(atype,pos)
+if(mdmode==10) call ConjugateGradient(av%atype,av%pos)
 
-call QEq(atype, pos, q)
-call FORCE(atype, pos, f, q)
+call QEq(ffp, av%atype, av%pos, av%q)
+call FORCE(ffp, av%atype, av%pos, av%f, av%q)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
@@ -30,53 +33,53 @@ call system_clock(it1,irt)
 do nstep=0, ntime_step-1
 
    if(mod(nstep,pstep)==0) then
-       call PRINTE(atype, v, q)
+       call PRINTE(av%atype, av%v, av%q)
        if(saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
    if(mod(nstep,fstep)==0) &
-        call OUTPUT(atype, pos, v, q, GetFileNameBase(current_step+nstep))
+        call OUTPUT(ffp, av%atype, av%pos, av%v, av%q, GetFileNameBase(current_step+nstep))
 
    if(mod(nstep,sstep)==0.and.mdmode==4) &
-      v(1:NATOMS,1:3)=vsfact*v(1:NATOMS,1:3)
+      av%v(1:NATOMS,1:3)=vsfact*av%v(1:NATOMS,1:3)
 
    if(mod(nstep,sstep)==0.and.mdmode==5) then
       ctmp = (treq*UTEMP0)/( GKE*UTEMP )
-      v(1:NATOMS,1:3)=sqrt(ctmp)*v(1:NATOMS,1:3)
+      av%v(1:NATOMS,1:3)=sqrt(ctmp)*av%v(1:NATOMS,1:3)
    endif
 
    if(mod(nstep,sstep)==0.and.(mdmode==0.or.mdmode==6)) &
-      call INITVELOCITY(atype, v)
+      call INITVELOCITY(av%atype, av%v)
 
 !--- correct the c.o.m motion
    if(mod(nstep,sstep)==0.and.mdmode==7) &
-      call ScaleTemperature(atype, v)
+      call ScaleTemperature(ffp, av%atype, av%v)
 
 !--- update velocity
-   call vkick(1.d0, atype, v, f) 
+   call vkick(1.d0, av%atype, av%v, av%f) 
 
 !--- update coordinates
-   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(q(1:NATOMS)-qsfp(1:NATOMS))
+   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(av%q(1:NATOMS)-qsfp(1:NATOMS))
    qsfp(1:NATOMS)=qsfp(1:NATOMS)+dt*qsfv(1:NATOMS)
 
-   pos(1:NATOMS,1:3)=pos(1:NATOMS,1:3)+dt*v(1:NATOMS,1:3)
+   av%pos(1:NATOMS,1:3)=av%pos(1:NATOMS,1:3)+dt*av%v(1:NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
-   call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],atype, pos, v, f, q)
+   call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],av%atype, av%pos, av%v, av%f, av%q)
    
-   if(mod(nstep,qstep)==0) call QEq(atype, pos, q)
-   call FORCE(atype, pos, f, q)
+   if(mod(nstep,qstep)==0) call QEq(ffp, av%atype, av%pos, av%q)
+   call FORCE(ffp, av%atype, av%pos, av%f, av%q)
 
 !--- update velocity
-   call vkick(1.d0, atype, v, f) 
-   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(q(1:NATOMS)-qsfp(1:NATOMS))
+   call vkick(1.d0, av%atype, av%v, av%f) 
+   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(av%q(1:NATOMS)-qsfp(1:NATOMS))
 
 enddo
 
 !--- save the final configurations
-call OUTPUT(atype, pos, v, q,  GetFileNameBase(current_step+nstep))
+call OUTPUT(ffp, av%atype, av%pos, av%v, av%q,  GetFileNameBase(current_step+nstep))
 
 !--- update rxff.bin in working directory for continuation run
-call WriteBIN(atype, pos, v, q, GetFileNameBase(-1))
+call WriteBIN(av%atype, av%pos, av%v, av%q, GetFileNameBase(-1))
 
 call system_clock(it2,irt)
 it_timer(Ntimer)=(it2-it1)
@@ -318,11 +321,13 @@ it_timer(3)=it_timer(3)+(tj-ti)
 end subroutine 
 
 !----------------------------------------------------------------------
-subroutine NEIGHBORLIST(nlayer, atype, pos)
+subroutine NEIGHBORLIST(ffp, nlayer, atype, pos)
 use atoms; use parameters
 ! calculate neighbor list for atoms witin cc(1:3, -nlayer:nlayer) cells.
 !----------------------------------------------------------------------
 implicit none
+
+type(forcefield_params),intent(in) :: ffp
 integer,intent(in) :: nlayer
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 
@@ -358,7 +363,7 @@ DO c3=-nlayer, cc(3)-1+nlayer
 
            if(n/=m) then
              nty = nint(atype(n))
-             inxn = inxn2(mty, nty)
+             inxn = ffp%inxn2(mty, nty)
 
              dr(1:3) = pos(n,1:3) - pos(m,1:3) 
              dr2 = sum(dr(1:3)*dr(1:3))
@@ -417,11 +422,12 @@ it_timer(5)=it_timer(5)+(tj-ti)
 end subroutine
 
 !----------------------------------------------------------------------
-subroutine GetNonbondingPairList(pos)
+subroutine GetNonbondingPairList(rctap2, pos)
 use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 
+real(8),intent(in) :: rctap2
 real(8),intent(in) :: pos(NBUFFER,3)
 
 integer :: c1,c2,c3,c4,c5,c6,i,j,m,n,mn,iid,jid
@@ -477,11 +483,12 @@ it_timer(15)=it_timer(15)+(tj-ti)
 end subroutine
 
 !----------------------------------------------------------------------
-subroutine angular_momentum(atype, pos, v)
+subroutine angular_momentum(mass, atype, pos, v)
 use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 
+real(8),allocatable,dimension(:) :: mass
 real(8) :: atype(NBUFFER), pos(NBUFFER,3),v(NBUFFER,3)
 
 integer :: i,ity
@@ -631,33 +638,36 @@ enddo
 end subroutine
 
 !-----------------------------------------------------------------------
-subroutine ScaleTemperature(atype, v)
+subroutine ScaleTemperature(ffp, atype, v)
 use atoms; use parameters
 !-----------------------------------------------------------------------
 implicit none
-real(8) :: atype(NBUFFER), v(3,NBUFFER)
+
+type(forcefield_params),intent(in) :: ffp
+real(8) :: atype(NBUFFER), v(NBUFFER,3)
 
 integer :: i,ity
 real(8) :: Ekinetic, ctmp
 
 do i=1, NATOMS
    ity=nint(atype(i))
-   Ekinetic=0.5d0*mass(ity)*sum(v(i,1:3)*v(i,1:3))
+   Ekinetic=0.5d0*ffp%mass(ity)*sum(v(i,1:3)*v(i,1:3))
    ctmp = (treq*UTEMP0)/( Ekinetic*UTEMP )
    v(i,1:3)=sqrt(ctmp)*v(i,1:3)
 enddo
 
-call LinearMomentum(atype, v)
+call LinearMomentum(ffp, atype, v)
 
 return
 end
 
 !-----------------------------------------------------------------------
-subroutine LinearMomentum(atype, v)
+subroutine LinearMomentum(ffp, atype, v)
 use atoms; use parameters
 !-----------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
 real(8) :: atype(NBUFFER), v(NBUFFER,3)
 
 integer :: i,ity
@@ -667,8 +677,8 @@ real(8) :: mm,vCM(3),sbuf(4),rbuf(4)
 vCM(:)=0.d0;  mm = 0.d0
 do i=1, NATOMS
    ity = nint(atype(i))
-   vCM(1:3)=vCM(1:3) + mass(ity)*v(i,1:3)
-   mm = mm + mass(ity)
+   vCM(1:3)=vCM(1:3) + ffp%mass(ity)*v(i,1:3)
+   mm = mm + ffp%mass(ity)
 enddo
 
 sbuf(1)=mm; sbuf(2:4)=vCM(1:3)
@@ -685,3 +695,4 @@ enddo
 
 return
 end
+

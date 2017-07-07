@@ -1,5 +1,5 @@
 !------------------------------------------------------------------------------
-subroutine QEq(atype, pos, q)
+subroutine QEq(ffp, atype, pos, q)
 use atoms; use parameters
 ! Two vector electronegativity equilization routine
 !
@@ -11,6 +11,8 @@ use atoms; use parameters
 !<Est> :: ElectroSTatic energy
 !-------------------------------------------------------------------------------
 implicit none
+
+type(forcefield_params),intent(in) :: ffp
 
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: q(NBUFFER)
@@ -28,7 +30,7 @@ real(8) :: QCopyDr(3)
 
 call system_clock(i1,k1)
 
-QCopyDr(1:3)=rctap/(/lata,latb,latc/)
+QCopyDr(1:3)=ffp%rctap/(/lata,latb,latc/)
 
 !--- Initialize <s> vector with current charge and <t> vector with zero.
 !--- isQEq==1 Normal QEq, isQEq==2 Extended Lagrangian method, DEFAULT skip QEq 
@@ -220,7 +222,7 @@ do c3=0, nbcc(3)-1
             dr(1:3) = pos(i,1:3) - pos(j,1:3)
             dr2 =  sum(dr(1:3)*dr(1:3))
 
-            if(dr2 < rctap2) then
+            if(dr2 < ffp%rctap2) then
 
                jty = nint(atype(j))
 
@@ -234,7 +236,7 @@ do c3=0, nbcc(3)-1
                drtb = dr2 - itb*UDR
                drtb = drtb*UDRi
 
-               inxn = inxn2(ity, jty)
+               inxn = ffp%inxn2(ity, jty)
 
                hessian(nbplist(i,0),i) = (1.d0-drtb)*TBL_Eclmb_QEq(itb,inxn) + drtb*TBL_Eclmb_QEq(itb+1,inxn)
             endif
@@ -278,12 +280,12 @@ Est = 0.d0
 !$omp parallel do default(shared), schedule(runtime), private(i,j,j1,ity,eta_ity,Est1),reduction(+:Est)
 do i=1, NATOMS
    ity = nint(atype(i))
-   eta_ity = eta(ity)
+   eta_ity = ffp%eta(ity)
 
    hshs(i) = eta_ity*hs(i)
    hsht(i) = eta_ity*ht(i)
 
-   Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
+   Est = Est + ffp%chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
 
    do j1 = 1, nbplist(i,0)
       j = nbplist(i,j1)
@@ -330,9 +332,9 @@ do i=1,NATOMS
    enddo
 
    ity = nint(atype(i))
-   eta_ity = eta(ity)
+   eta_ity = ffp%eta(ity)
 
-   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum
+   gs(i) = - ffp%chi(ity) - eta_ity*qs(i) - gssum
    gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
 
 enddo 

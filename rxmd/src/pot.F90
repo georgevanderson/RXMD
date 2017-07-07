@@ -1,8 +1,10 @@
 !----------------------------------------------------------------------------------------------------------------------
-subroutine FORCE(atype, pos, f, q)
+subroutine FORCE(ffp, atype, pos, f, q)
 use parameters; use atoms 
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
+
+type(forcefield_params) :: ffp
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(in) :: pos(NBUFFER,3)
@@ -32,8 +34,8 @@ call COPYATOMS(MODE_COPY,NMINCELL*lcsize(1:3),atype,pos,vdummy,f,q)
 call LINKEDLIST(atype, pos, lcsize, header, llist, nacell, cc, MAXLAYERS)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
-call NEIGHBORLIST(NMINCELL, atype, pos)
-call GetNonbondingPairList(pos)
+call NEIGHBORLIST(ffp, NMINCELL, atype, pos)
+call GetNonbondingPairList(ffp%rctap2, pos)
 
 !--- get atom type and global ids
 do i=1, NBUFFER
@@ -44,7 +46,7 @@ do i=1, NBUFFER
 enddo
 
 !$omp parallel default(shared)
-CALL BOCALC(NMINCELL, atype, pos)
+CALL BOCALC(ffp, NMINCELL, atype, pos)
 !$omp end parallel
 !$omp parallel default(shared)
 CALL ENbond()
@@ -159,12 +161,12 @@ do i = 1, copyptr(6)
 
    if(ity==0) cycle
 
-   deltaE = -Vale(ity) + Val(ity) + delta(i)
+   deltaE = -ffp%Vale(ity) + ffp%Val(ity) + delta(i)
 
    dEh = deltaE*0.5d0
    idEh = is_idEH*int(dEh)
-   explp1 = exp( -plp1(ity)*(2.d0 + deltaE - 2*idEh)**2 )
-   Clp = 2.d0*plp1(ity)*explp1*(2.d0 + deltaE - 2*idEh)
+   explp1 = exp( -ffp%plp1(ity)*(2.d0 + deltaE - 2*idEh)**2 )
+   Clp = 2.d0*ffp%plp1(ity)*explp1*(2.d0 + deltaE - 2*idEh)
 
    dDlp(i) = Clp
 
@@ -172,13 +174,13 @@ do i = 1, copyptr(6)
 !     dDlp(i) = Clp + (0.5d0 - Clp)*( epsrn*abs(mdEh)**(epsrn-1.d0) )
 
    nlp(i) = explp1 - dble(idEh)
-   deltalp(i) = nlpopt(ity) - nlp(i)
+   deltalp(i) = ffp%nlpopt(ity) - nlp(i)
 
 !--- if mass is greater than 21.0, deltalp(i) becomes zero. see poten.f line 750.
 !--- if (amas(ity1).gt.21.0) dfvl=0.0d0
 !--- diffvlph=dfvl*(voptlp-vlptemp(i1))
 
-   if(mass(ity)>21.d0) deltalp(i) = 0.d0
+   if(ffp%mass(ity)>21.d0) deltalp(i) = 0.d0
 
 enddo
 !============================================================== preparation ===
@@ -193,29 +195,29 @@ do i=1, NATOMS
    do j1 = 1, nbrlist(i,0)
       j = nbrlist(i, j1)
       jty = itype(j)
-      inxn = inxn2(ity,jty)
-      sum_ovun1 = sum_ovun1 + povun1(inxn)*Desig(inxn)*BO(0,i,j1)
+      inxn = ffp%inxn2(ity,jty)
+      sum_ovun1 = sum_ovun1 + ffp%povun1(inxn)*ffp%Desig(inxn)*BO(0,i,j1)
       sum_ovun2 = sum_ovun2 + (delta(j)-deltalp(j))*(BO(2,i,j1) + BO(3,i,j1))
    enddo
 
 !--- Lone Pair
    expvd2 = exp(-75.d0*deltalp(i))
-   dElp = plp2(ity)*( (1.d0 + expvd2) + 75.d0*deltalp(i)*expvd2 ) / (1.d0 + expvd2)**2
+   dElp = ffp%plp2(ity)*( (1.d0 + expvd2) + 75.d0*deltalp(i)*expvd2 ) / (1.d0 + expvd2)**2
 
 !--- Over Coordinate + Common part with Under Coordinate
-   expovun1 = povun3(ity) * exp( povun4(ity) * sum_ovun2 )
+   expovun1 = ffp%povun3(ity) * exp( ffp%povun4(ity) * sum_ovun2 )
    deltalpcorr = delta(i) - deltalp(i)/(1.d0 + expovun1) 
-   expovun2=exp(povun2(ity)*deltalpcorr)
+   expovun2=exp(ffp%povun2(ity)*deltalpcorr)
 
 !=== if one atom flys away, this term becomes zero because the total bond-order becomes zero.
 !=== Add a small value in the denominator to avoid it. See poten.f line 787,
 !=== hulpp=(1.0/(vov1+aval(ity1)+1e-8))
-   DlpV_i = 1.d0/(deltalpcorr + Val(ity) + 1.d-8)
+   DlpV_i = 1.d0/(deltalpcorr + ffp%Val(ity) + 1.d-8)
 
 !--- Under Coordinate
    expovun2n = 1.d0 / expovun2
-   expovun6 = exp(povun6(ity)*deltalpcorr)
-   expovun8 = povun7(ity)*exp( povun8(ity)*sum_ovun2 )
+   expovun6 = exp(ffp%povun6(ity)*deltalpcorr)
+   expovun8 = ffp%povun7(ity)*exp( ffp%povun8(ity)*sum_ovun2 )
 
    div_expovun1  = 1.d0/(1.d0 + expovun1)
    div_expovun2  = 1.d0/(1.d0 + expovun2)
@@ -223,9 +225,9 @@ do i=1, NATOMS
    div_expovun8  = 1.d0/(1.d0 + expovun8)
 
 !--- Energy Calculation
-   PElp = plp2(ity)*deltalp(i)/(1.d0+expvd2)
+   PElp = ffp%plp2(ity)*deltalp(i)/(1.d0+expvd2)
    PEover = sum_ovun1 * DlpV_i * deltalpcorr * div_expovun2
-   PEunder = -povun5(ity) * (1.d0 - expovun6)*div_expovun2n*div_expovun8
+   PEunder = -ffp%povun5(ity) * (1.d0 - expovun6)*div_expovun2n*div_expovun8
 
 !--- if the representitive atom is a resident, sum thier potential energies.
    PE(2) = PE(2) + PElp
@@ -237,16 +239,16 @@ do i=1, NATOMS
 
    CEover(1) = deltalpcorr*DlpV_i*div_expovun2
    CEover(2) = sum_ovun1*DlpV_i*div_expovun2 * &
-         (1.d0 - deltalpcorr*DlpV_i - povun2(ity)*deltalpcorr*div_expovun2n )
+         (1.d0 - deltalpcorr*DlpV_i - ffp%povun2(ity)*deltalpcorr*div_expovun2n )
 
    CEover(3) = CEover(2)*( 1.d0 - dDlp(i)*div_expovun1 )
-   CEover(4) = CEover(2)*deltalp(i)*povun4(ity)*expovun1*div_expovun1**2 
+   CEover(4) = CEover(2)*deltalp(i)*ffp%povun4(ity)*expovun1*div_expovun1**2 
 
-   CEunder(1) = (  povun5(ity)*povun6(ity)*expovun6*div_expovun8 &
-                 + PEunder*povun2(ity)*expovun2n)*div_expovun2n 
-   CEunder(2) =-PEunder*povun8(ity)*expovun8*div_expovun8
+   CEunder(1) = (  ffp%povun5(ity)*ffp%povun6(ity)*expovun6*div_expovun8 &
+                 + PEunder*ffp%povun2(ity)*expovun2n)*div_expovun2n 
+   CEunder(2) =-PEunder*ffp%povun8(ity)*expovun8*div_expovun8
    CEunder(3) = CEunder(1)*(1.d0 - dDlp(i)*div_expovun1 )
-   CEunder(4) = CEunder(1)*deltalp(i)*povun4(ity)*expovun1*div_expovun1**2 + CEunder(2)
+   CEunder(4) = CEunder(1)*deltalp(i)*ffp%povun4(ity)*expovun1*div_expovun1**2 + CEunder(2)
 
 !          CElp(:)=0.d0;    PE(2)=0.d0
 !          CEover(:)=0.d0;  PE(3)=0.d0
@@ -256,9 +258,9 @@ do i=1, NATOMS
    do j1 = 1, nbrlist(i,0) 
       j = nbrlist(i, j1) 
       jty = itype(j)
-      inxn = inxn2(ity,jty)
+      inxn = ffp%inxn2(ity,jty)
 
-      CEover(5) = CEover(1)*povun1(inxn)*desig(inxn)
+      CEover(5) = CEover(1)*ffp%povun1(inxn)*ffp%desig(inxn)
       CEover(6) = CEover(4)*( 1.d0 - dDlp(j)) * (BO(2,i,j1) + BO(3,i,j1))
       CEover(7) = CEover(4)*( delta(j) - deltalp(j) )
 
@@ -336,7 +338,7 @@ do j=1, NATOMS
    enddo
    prod_SBO = exp(sum_BO8)
 
-   delta_ang = delta(j) + Val(jty) - Valangle(jty)   
+   delta_ang = delta(j) + ffp%Val(jty) - ffp%Valangle(jty)   
 
    do i1=1, nbrlist(j,0)-1
 
@@ -370,102 +372,102 @@ do j=1, NATOMS
          sin_ijk = sin(theta_ijk)
 
 !--- Check the type of 3atoms combination.
-         inxn = inxn3(ity,jty,kty)
+         inxn = ffp%inxn3(ity,jty,kty)
          if(inxn /= 0) then
 
 !--- PEval part:
-            BOij_p4 = BOij**pval4(inxn)
-            exp3ij = exp( -pval3(jty)*BOij_p4 )
+            BOij_p4 = BOij**ffp%pval4(inxn)
+            exp3ij = exp( -ffp%pval3(jty)*BOij_p4 )
             fn7ij = 1.d0 - exp3ij
-            BOjk_p4 = BOjk**pval4(inxn)
-            exp3jk = exp( -pval3(jty)*BOjk_p4 )
+            BOjk_p4 = BOjk**ffp%pval4(inxn)
+            exp3jk = exp( -ffp%pval3(jty)*BOjk_p4 )
             fn7jk = 1.d0 - exp3jk
 
-            exp6 = exp( pval6(inxn)*delta_ang )
-            exp7 = exp(-pval7(inxn)*delta_ang )
+            exp6 = exp( ffp%pval6(inxn)*delta_ang )
+            exp7 = exp(-ffp%pval7(inxn)*delta_ang )
             trm8 = 1.d0 + exp6 + exp7
-            fn8j = pval5(jty) - (pval5(jty)-1.d0)*(2.d0 + exp6)/trm8 
+            fn8j = ffp%pval5(jty) - (ffp%pval5(jty)-1.d0)*(2.d0 + exp6)/trm8 
 
-            SBO = sum_SBO1 + (1.d0 - prod_SBO)*(-delta_ang - pval8(inxn)*nlp(j))
+            SBO = sum_SBO1 + (1.d0 - prod_SBO)*(-delta_ang - ffp%pval8(inxn)*nlp(j))
             if(SBO.LE.0) SBO2 = 0.d0
-            if(SBO.GT.0) SBO2 = SBO**pval9(inxn)
-            if(SBO.GT.1) SBO2 = 2.d0 - (2.d0 - SBO)**pval9(inxn)
+            if(SBO.GT.0) SBO2 = SBO**ffp%pval9(inxn)
+            if(SBO.GT.1) SBO2 = 2.d0 - (2.d0 - SBO)**ffp%pval9(inxn)
             if(SBO.GT.2) SBO2 = 2.d0
  
-            theta0 = pi - theta00(inxn) * (1.d0 - exp( -pval10(inxn)*(2.d0-SBO2) ))
+            theta0 = pi - ffp%theta00(inxn) * (1.d0 - exp( -ffp%pval10(inxn)*(2.d0-SBO2) ))
             theta_diff = theta0 - theta_ijk
-            exp2 = exp( -pval2(inxn) * theta_diff*theta_diff ) 
+            exp2 = exp( -ffp%pval2(inxn) * theta_diff*theta_diff ) 
    
-            PEval = fn7ij * fn7jk * fn8j * (pval1(inxn) - pval1(inxn)*exp2)   
+            PEval = fn7ij * fn7jk * fn8j * (ffp%pval1(inxn) - ffp%pval1(inxn)*exp2)   
    
 !---  PEval derivative part:
-            Cf7ij = pval3(jty)*pval4(inxn)*( BOij**(pval4(inxn)-1.d0) )*exp3ij 
-            Cf7jk = pval3(jty)*pval4(inxn)*( BOjk**(pval4(inxn)-1.d0) )*exp3jk
+            Cf7ij = ffp%pval3(jty)*ffp%pval4(inxn)*( BOij**(ffp%pval4(inxn)-1.d0) )*exp3ij 
+            Cf7jk = ffp%pval3(jty)*ffp%pval4(inxn)*( BOjk**(ffp%pval4(inxn)-1.d0) )*exp3jk
 
-            Cf8j = (1.d0 - pval5(jty))/(trm8*trm8) *                                &
+            Cf8j = (1.d0 - ffp%pval5(jty))/(trm8*trm8) *                                &
                      (                                                              &
-                          pval6(inxn)*exp6*trm8                                     &
-                        -(2.d0 + exp6)*(pval6(inxn)*exp6 - pval7(inxn)*exp7)        &
+                          ffp%pval6(inxn)*exp6*trm8                                     &
+                        -(2.d0 + exp6)*(ffp%pval6(inxn)*exp6 - ffp%pval7(inxn)*exp7)        &
                       )
     
-            Ctheta_diff = 2.d0*pval2(inxn)*theta_diff*exp2/(1.d0 - exp2)
-            Ctheta0 = pval10(inxn)*theta00(inxn)*exp( -pval10(inxn)*(2.d0 - SBO2) )  
+            Ctheta_diff = 2.d0*ffp%pval2(inxn)*theta_diff*exp2/(1.d0 - exp2)
+            Ctheta0 = ffp%pval10(inxn)*ffp%theta00(inxn)*exp( -ffp%pval10(inxn)*(2.d0 - SBO2) )  
 
             if((SBO.LE.0).OR.(SBO.GT.2))  CSBO2 = 0.d0
-            if((SBO.GT.0).AND.(SBO.LE.1)) CSBO2 = pval9(inxn)*SBO**(pval9(inxn)-1.d0)
-            if((SBO.GT.1).AND.(SBO.LE.2)) CSBO2 = pval9(inxn)*(2.d0-SBO)**(pval9(inxn)-1.d0)
+            if((SBO.GT.0).AND.(SBO.LE.1)) CSBO2 = ffp%pval9(inxn)*SBO**(ffp%pval9(inxn)-1.d0)
+            if((SBO.GT.1).AND.(SBO.LE.2)) CSBO2 = ffp%pval9(inxn)*(2.d0-SBO)**(ffp%pval9(inxn)-1.d0)
   
-            dSBO(1) =-8.d0*prod_SBO*( delta_ang + pval8(inxn)*nlp(j) )
-            dSBO(2) = (prod_SBO - 1.d0)*(1.d0 - pval8(inxn)*dDlp(j) )
+            dSBO(1) =-8.d0*prod_SBO*( delta_ang + ffp%pval8(inxn)*nlp(j) )
+            dSBO(2) = (prod_SBO - 1.d0)*(1.d0 - ffp%pval8(inxn)*dDlp(j) )
  
-            CEval(1) = Cf7ij * fn7jk * fn8j * pval1(inxn) * (1.d0 - exp2)
-            CEval(2) = fn7ij * Cf7jk * fn8j * pval1(inxn) * (1.d0 - exp2) 
-            CEval(3) = fn7ij * fn7jk * Cf8j * pval1(inxn) * (1.d0 - exp2)
+            CEval(1) = Cf7ij * fn7jk * fn8j * ffp%pval1(inxn) * (1.d0 - exp2)
+            CEval(2) = fn7ij * Cf7jk * fn8j * ffp%pval1(inxn) * (1.d0 - exp2) 
+            CEval(3) = fn7ij * fn7jk * Cf8j * ffp%pval1(inxn) * (1.d0 - exp2)
 
-            CEval(4) = 2.0d0*pval1(inxn)*pval2(inxn)*fn7ij*fn7jk*fn8j*exp2*theta_diff
+            CEval(4) = 2.0d0*ffp%pval1(inxn)*ffp%pval2(inxn)*fn7ij*fn7jk*fn8j*exp2*theta_diff
             CEval(5) = CEval(4)*Ctheta0*CSBO2
             CEval(6) = CEval(5)*dSBO(1)
             CEval(7) = CEval(5)*dSBO(2)
             CEval(8) = CEval(4)/sin_ijk
 
 !--- PEpen part
-            exp_pen3 = exp(-ppen3(inxn)*delta(j))
-            exp_pen4 = exp( ppen4(inxn)*delta(j))
+            exp_pen3 = exp(-ffp%ppen3(inxn)*delta(j))
+            exp_pen4 = exp( ffp%ppen4(inxn)*delta(j))
             fn9 = (2.d0 + exp_pen3) / (1.d0 + exp_pen3 + exp_pen4)
-            exp_pen2ij = exp( -ppen2(inxn)*(BOij-2.d0)*(BOij-2.d0) )
-            exp_pen2jk = exp( -ppen2(inxn)*(BOjk-2.d0)*(BOjk-2.d0) )
+            exp_pen2ij = exp( -ffp%ppen2(inxn)*(BOij-2.d0)*(BOij-2.d0) )
+            exp_pen2jk = exp( -ffp%ppen2(inxn)*(BOjk-2.d0)*(BOjk-2.d0) )
 
-            PEpen = ppen1(inxn) * fn9 * exp_pen2ij * exp_pen2jk 
+            PEpen = ffp%ppen1(inxn) * fn9 * exp_pen2ij * exp_pen2jk 
 
 !--- PEpen derivative part:
             trm_pen34 = 1.d0 + exp_pen3 + exp_pen4
-            Cf9j = ( -ppen3(inxn)*exp_pen3*trm_pen34                                   &
-                     -(2.d0 + exp_pen3)*(-ppen3(inxn)*exp_pen3 + ppen4(inxn)*exp_pen4) &
+            Cf9j = ( -ffp%ppen3(inxn)*exp_pen3*trm_pen34                                   &
+                     -(2.d0 + exp_pen3)*(-ffp%ppen3(inxn)*exp_pen3 + ffp%ppen4(inxn)*exp_pen4) &
                    ) / (trm_pen34*trm_pen34)
             CEpen(1) = Cf9j / fn9 
-            CEPen(2) = -2.d0 * ppen2(inxn) * (BOij - 2.d0)
-            CEPen(3) = -2.d0 * ppen2(inxn) * (BOjk - 2.d0)
+            CEPen(2) = -2.d0 * ffp%ppen2(inxn) * (BOij - 2.d0)
+            CEPen(3) = -2.d0 * ffp%ppen2(inxn) * (BOjk - 2.d0)
             CEpen(1:3) = CEpen(1:3)*PEpen 
 
 !--- PEcoa part:
-            sum_BOi = delta(i) + Val(ity)
-            sum_BOk = delta(k) + Val(kty)
-            delta_val = delta(j) + Val(jty) - Valval(jty) 
+            sum_BOi = delta(i) + ffp%Val(ity)
+            sum_BOk = delta(k) + ffp%Val(kty)
+            delta_val = delta(j) + ffp%Val(jty) - ffp%Valval(jty) 
 
-            exp_coa2 = exp( pcoa2(inxn)*delta_val )
-            exp_coa3i = exp( -pcoa3(inxn)*(-BOij + sum_BOi)**2 )
-            exp_coa3k = exp( -pcoa3(inxn)*(-BOjk + sum_BOk)**2 )
-            exp_coa4i = exp( -pcoa4(inxn)*( BOij - 1.5d0)**2 )
-            exp_coa4k = exp( -pcoa4(inxn)*( BOjk - 1.5d0)**2 )
+            exp_coa2 = exp( ffp%pcoa2(inxn)*delta_val )
+            exp_coa3i = exp( -ffp%pcoa3(inxn)*(-BOij + sum_BOi)**2 )
+            exp_coa3k = exp( -ffp%pcoa3(inxn)*(-BOjk + sum_BOk)**2 )
+            exp_coa4i = exp( -ffp%pcoa4(inxn)*( BOij - 1.5d0)**2 )
+            exp_coa4k = exp( -ffp%pcoa4(inxn)*( BOjk - 1.5d0)**2 )
 
-            PEcoa = pcoa1(inxn)/(1.d0 + exp_coa2)*exp_coa3i*exp_coa3k*exp_coa4i*exp_coa4k
+            PEcoa = ffp%pcoa1(inxn)/(1.d0 + exp_coa2)*exp_coa3i*exp_coa3k*exp_coa4i*exp_coa4k
 
 !--- PEcoa derivative part: 
-            CEcoa(1) =-2.d0*pcoa4(inxn)*(BOij-1.5d0) !dBOij
-            CEcoa(2) =-2.d0*pcoa4(inxn)*(BOjk-1.5d0) !dBOjk
-            CEcoa(3) =-pcoa2(inxn) * exp_coa2 / (1.d0 + exp_coa2) !dDj
-            CEcoa(4) =-2.d0*pcoa3(inxn)*( -BOij + sum_BOi )
-            CEcoa(5) =-2.d0*pcoa3(inxn)*( -BOjk + sum_BOk ) 
+            CEcoa(1) =-2.d0*ffp%pcoa4(inxn)*(BOij-1.5d0) !dBOij
+            CEcoa(2) =-2.d0*ffp%pcoa4(inxn)*(BOjk-1.5d0) !dBOjk
+            CEcoa(3) =-ffp%pcoa2(inxn) * exp_coa2 / (1.d0 + exp_coa2) !dDj
+            CEcoa(4) =-2.d0*ffp%pcoa3(inxn)*( -BOij + sum_BOi )
+            CEcoa(5) =-2.d0*ffp%pcoa3(inxn)*( -BOjk + sum_BOk ) 
             CEcoa(1:5)=CEcoa(1:5)*PEcoa
 
 !--- if the j-atom is a resident, count the potential energies.
@@ -568,7 +570,7 @@ do i=1, NATOMS
 
             kty = itype(k)
 
-            inxnhb = inxn3hb(ity, jty, kty)
+            inxnhb = ffp%inxn3hb(ity, jty, kty)
 
             if ( (j/=k).and.(i/=k).and.(inxnhb/=0) ) then
 
@@ -593,16 +595,16 @@ do i=1, NATOMS
                   sin_xhz4 = sin_ijk_half**4
                   cos_xhz1 = ( 1.d0 - cos_ijk )
    
-                  exp_hb2 = exp( -phb2(inxnhb)*BO(0,i,j1) )
-                  exp_hb3 = exp( -phb3(inxnhb)*(r0hb(inxnhb)/rjk(0) + rjk(0)/r0hb(inxnhb) - 2.d0) )
+                  exp_hb2 = exp( -ffp%phb2(inxnhb)*BO(0,i,j1) )
+                  exp_hb3 = exp( -ffp%phb3(inxnhb)*(ffp%r0hb(inxnhb)/rjk(0) + rjk(0)/ffp%r0hb(inxnhb) - 2.d0) )
    
-                  PEhb = phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*sin_xhz4
+                  PEhb = ffp%phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*sin_xhz4
 
                   PE(10) = PE(10) + PEhb
    
-                  CEhb(1) = phb1(inxnhb)*phb2(inxnhb)*exp_hb2*exp_hb3*sin_xhz4
-                  CEhb(2) =-0.5d0*phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*cos_xhz1
-                  CEhb(3) =-PEhb*phb3(inxnhb)*( -r0hb(inxnhb)/rjk(0)**2 + 1.d0/r0hb(inxnhb) )*(1.d0/rjk(0))
+                  CEhb(1) = ffp%phb1(inxnhb)*ffp%phb2(inxnhb)*exp_hb2*exp_hb3*sin_xhz4
+                  CEhb(2) =-0.5d0*ffp%phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*cos_xhz1
+                  CEhb(3) =-PEhb*ffp%phb3(inxnhb)*( -ffp%r0hb(inxnhb)/rjk(0)**2 + 1.d0/ffp%r0hb(inxnhb) )*(1.d0/rjk(0))
 
                   i1 = nbrindx(i,j1)
                   call ForceB(i,j1, j,i1, CEhb(1))
@@ -679,7 +681,7 @@ do i=1, NATOMS
    ity = itype(i) 
    iid = gtype(i)
    
-   PE(13) = PE(13) + CEchrge*(chi(ity)*q(i) + 0.5d0*eta(ity)*q(i)**2)
+   PE(13) = PE(13) + CEchrge*(ffp%chi(ity)*q(i) + 0.5d0*ffp%eta(ity)*q(i)**2)
 
     do j1 = 1, nbplist(i,0) 
          j = nbplist(i,j1)
@@ -691,11 +693,11 @@ do i=1, NATOMS
             dr(1:3) = pos(i,1:3) - pos(j,1:3)
             dr2 = sum(dr(1:3)*dr(1:3))
 
-            if(dr2<=rctap2) then
+            if(dr2<=ffp%rctap2) then
 
                jty = itype(j)
 
-               inxn = inxn2(ity, jty)
+               inxn = ffp%inxn2(ity, jty)
 !                  dr(0) = sqrt(dr2)
 
 !--- get table index and residual value
@@ -781,16 +783,16 @@ do i=1, NATOMS
       if(jid<iid) then
 
         jty = itype(j)
-        inxn = inxn2(ity, jty)
+        inxn = ffp%inxn2(ity, jty)
 
-        exp_be12 = exp( pbe1(inxn)*( 1.d0 - BO(1,i,j1)**pbe2(inxn) ) )
+        exp_be12 = exp( ffp%pbe1(inxn)*( 1.d0 - BO(1,i,j1)**ffp%pbe2(inxn) ) )
 
-        PEbo = - Desig(inxn)*BO(1,i,j1)*exp_be12 - Depi(inxn)*BO(2,i,j1) - Depipi(inxn)*BO(3,i,j1) 
+        PEbo = - ffp%Desig(inxn)*BO(1,i,j1)*exp_be12 - ffp%Depi(inxn)*BO(2,i,j1) - ffp%Depipi(inxn)*BO(3,i,j1) 
 
         PE(1) = PE(1) + PEbo
 
-        CEbo = -Desig(inxn)*exp_be12*( 1.d0 - pbe1(inxn)*pbe2(inxn)*BO(1,i,j1)**pbe2(inxn) )
-        coeff(1:3)= (/ CEbo, -Depi(inxn), -Depipi(inxn) /)
+        CEbo = -ffp%Desig(inxn)*exp_be12*( 1.d0 - ffp%pbe1(inxn)*ffp%pbe2(inxn)*BO(1,i,j1)**ffp%pbe2(inxn) )
+        coeff(1:3)= (/ CEbo, -ffp%Depi(inxn), -ffp%Depipi(inxn) /)
 
         i1 = nbrindx(i,j1)
         call ForceBbo(i,j1, j,i1, coeff)
@@ -845,7 +847,7 @@ call system_clock(ti,tk)
 do j=1,NATOMS
 
   jty = itype(j)
-  delta_ang_j = delta(j) + Val(jty) - Valangle(jty)
+  delta_ang_j = delta(j) + ffp%Val(jty) - ffp%Valangle(jty)
   jid = gtype(j)
 
   do k1=1, nbrlist(j,0) 
@@ -861,7 +863,7 @@ do j=1,NATOMS
 
         kty = itype(k)
 
-        delta_ang_k = delta(k) + Val(kty) - Valangle(kty)
+        delta_ang_k = delta(k) + ffp%Val(kty) - ffp%Valangle(kty)
         delta_ang_jk = delta_ang_j + delta_ang_k  
 
         rjk(1:3) = pos(j,1:3) - pos(k,1:3)
@@ -905,7 +907,7 @@ do j=1,NATOMS
 
                  l=nbrlist(k,l1)
                  lty = itype(l)
-                 inxn = inxn4(ity,jty,kty,lty)
+                 inxn = ffp%inxn4(ity,jty,kty,lty)
 
                  if ((inxn/=0).and.(i/=l).and.(j/=l)) then
 
@@ -915,24 +917,24 @@ do j=1,NATOMS
                  rkl(1:3) = pos(k,1:3) - pos(l,1:3)
                  rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
 
-                 exp_tor2(1) = exp(-ptor2(inxn)*BOij)  ! i-j
-                 exp_tor2(2) = exp(-ptor2(inxn)*BOjk)  ! j-k
-                 exp_tor2(3) = exp(-ptor2(inxn)*BOkl)  ! k-l
+                 exp_tor2(1) = exp(-ffp%ptor2(inxn)*BOij)  ! i-j
+                 exp_tor2(2) = exp(-ffp%ptor2(inxn)*BOjk)  ! j-k
+                 exp_tor2(3) = exp(-ffp%ptor2(inxn)*BOkl)  ! k-l
 
-                 exp_tor3 = exp(-ptor3(inxn)*delta_ang_jk )
-                 exp_tor4 = exp( ptor4(inxn)*delta_ang_jk )
+                 exp_tor3 = exp(-ffp%ptor3(inxn)*delta_ang_jk )
+                 exp_tor4 = exp( ffp%ptor4(inxn)*delta_ang_jk )
                  exp_tor34_i = 1.d0/(1.d0 + exp_tor3 + exp_tor4)
 
                  fn10 = (1.d0 - exp_tor2(1))*(1.d0 - exp_tor2(2))*(1.d0 - exp_tor2(3))
                  fn11 = (2.d0 + exp_tor3)/(1.d0 + exp_tor3 + exp_tor4)
 
-                 fn12 = exp(-pcot2(inxn)*( (BOij-1.5d0)**2 + &
+                 fn12 = exp(-ffp%pcot2(inxn)*( (BOij-1.5d0)**2 + &
                                            (BOjk-1.5d0)**2 + &
                                            (BOkl-1.5d0)**2 ) )
 
 !--- NOTICE: pi-bond value used here is not the subtracted one but the original value. 
                  btb2 = 2.d0 - BO(2,j,k1) - fn11         !<kn>
-                 exp_tor1 = exp( ptor1(inxn)*btb2**2 )   !<kn>
+                 exp_tor1 = exp( ffp%ptor1(inxn)*btb2**2 )   !<kn>
 
 
 !--- Get angle variables i-j-k, j-k-l, i-j-k-l
@@ -958,9 +960,9 @@ do j=1,NATOMS
                  sin_ijkl = sin(omega_ijkl)
 
                  PEtors = 0.5d0*fn10*sin_ijk*sin_jkl* &
-                   ( V1(inxn)*(1.d0 + cos_ijkl(1) ) + V2(inxn)*exp_tor1*cos_ijkl(2) + V3(inxn)*cos_ijkl(3) )  !<kn>
+                   ( ffp%V1(inxn)*(1.d0 + cos_ijkl(1) ) + ffp%V2(inxn)*exp_tor1*cos_ijkl(2) + ffp%V3(inxn)*cos_ijkl(3) )  !<kn>
 
-                 PEconj = pcot1(inxn)*fn12*(1.d0 + (cos_ijkl_sqr - 1.d0)*sin_ijk*sin_jkl)
+                 PEconj = ffp%pcot1(inxn)*fn12*(1.d0 + (cos_ijkl_sqr - 1.d0)*sin_ijk*sin_jkl)
 
                  PE(8) = PE(8) + PEtors
                  PE(9) = PE(9) + PEconj
@@ -968,38 +970,41 @@ do j=1,NATOMS
 !--- Force coefficient calculation
 !--- Torsional term
                  CEtors(1) = 0.5d0*sin_ijk*sin_jkl*(                                  &
-                                                      V1(inxn)*(1.d0 + cos_ijkl(1))   & 
-                                                    + V2(inxn)*exp_tor1*cos_ijkl(2)   &
-                                                    + V3(inxn)*cos_ijkl(3)            &
+                                                      ffp%V1(inxn)*(1.d0 + cos_ijkl(1))   & 
+                                                    + ffp%V2(inxn)*exp_tor1*cos_ijkl(2)   &
+                                                    + ffp%V3(inxn)*cos_ijkl(3)            &
                                                    )
 
-                 CEtors(2) =-ptor1(inxn)*fn10*sin_ijk*sin_jkl*V2(inxn)*exp_tor1*btb2*cos_ijkl(2)
+                 CEtors(2) =-ffp%ptor1(inxn)*fn10*sin_ijk*sin_jkl*ffp%V2(inxn)*exp_tor1*btb2*cos_ijkl(2)
 
-                 dfn11 = (-ptor3(inxn)*exp_tor3 + &
-                     (ptor3(inxn)*exp_tor3 - ptor4(inxn)*exp_tor4)*(2.d0 + exp_tor3)*exp_tor34_i )*exp_tor34_i
+                 dfn11 = (-ffp%ptor3(inxn)*exp_tor3 + &
+                     (ffp%ptor3(inxn)*exp_tor3 - ffp%ptor4(inxn)*exp_tor4)*(2.d0 + exp_tor3)*exp_tor34_i )*exp_tor34_i
 
                  CEtors(3) = CEtors(2)*dfn11
 
-                 CEtors(4) = CEtors(1)*ptor2(inxn)*exp_tor2(1)*(1.d0 - exp_tor2(2))*(1.d0 - exp_tor2(3))
-                 CEtors(5) = CEtors(1)*ptor2(inxn)*(1.d0 - exp_tor2(1))*exp_tor2(2)*(1.d0 - exp_tor2(3))
-                 CEtors(6) = CEtors(1)*ptor2(inxn)*(1.d0 - exp_tor2(1))*(1.d0 - exp_tor2(2))*exp_tor2(3)
+                 CEtors(4) = CEtors(1)*ffp%ptor2(inxn)*exp_tor2(1)*(1.d0 - exp_tor2(2))*(1.d0 - exp_tor2(3))
+                 CEtors(5) = CEtors(1)*ffp%ptor2(inxn)*(1.d0 - exp_tor2(1))*exp_tor2(2)*(1.d0 - exp_tor2(3))
+                 CEtors(6) = CEtors(1)*ffp%ptor2(inxn)*(1.d0 - exp_tor2(1))*(1.d0 - exp_tor2(2))*exp_tor2(3)
 
-                 cmn = -0.5d0*fn10*( V1(inxn)*(1.d0 + cos_ijkl(1)) + V2(inxn)*exp_tor1*cos_ijkl(2) + V3(inxn)*cos_ijkl(3) )
+                 cmn = -0.5d0*fn10*( ffp%V1(inxn)*(1.d0 + cos_ijkl(1)) + & 
+                                     ffp%V2(inxn)*exp_tor1*cos_ijkl(2) + &
+                                     ffp%V3(inxn)*cos_ijkl(3) )
 
                  CEtors(7) = cmn*sin_jkl*tan_ijk_i
                  CEtors(8) = cmn*sin_ijk*tan_jkl_i
                  CEtors(9) = fn10*sin_ijk*sin_jkl * &
-                   ( 0.5d0*V1(inxn) - 2.d0*V2(inxn)*exp_tor1*cos_ijkl(1) + 1.5d0*V3(inxn)*(cos_2ijkl + 2.d0*cos_ijkl_sqr) )
+                   ( 0.5d0*ffp%V1(inxn) - 2.d0*ffp%V2(inxn)*exp_tor1*cos_ijkl(1) + &
+                     1.5d0*ffp%V3(inxn)*(cos_2ijkl + 2.d0*cos_ijkl_sqr) )
 
 !--- Conjugation Energy
-                 Cconj = -2.d0*pcot2(inxn)*PEconj
+                 Cconj = -2.d0*ffp%pcot2(inxn)*PEconj
                  CEconj(1) = Cconj*( BOij-1.5d0 )
                  CEconj(2) = Cconj*( BOjk-1.5d0 )
                  CEconj(3) = Cconj*( BOkl-1.5d0 )
 
-                 CEconj(4) =-pcot1(inxn)*fn12*(cos_ijkl_sqr-1.d0)*tan_ijk_i*sin_jkl
-                 CEconj(5) =-pcot1(inxn)*fn12*(cos_ijkl_sqr-1.d0)*sin_ijk*tan_jkl_i
-                 CEconj(6) = 2.d0*pcot1(inxn)*fn12*cos_ijkl(1)*sin_ijk*sin_jkl
+                 CEconj(4) =-ffp%pcot1(inxn)*fn12*(cos_ijkl_sqr-1.d0)*tan_ijk_i*sin_jkl
+                 CEconj(5) =-ffp%pcot1(inxn)*fn12*(cos_ijkl_sqr-1.d0)*sin_ijk*tan_jkl_i
+                 CEconj(6) = 2.d0*ffp%pcot1(inxn)*fn12*cos_ijkl(1)*sin_ijk*sin_jkl
 
 !              CEtors(:)=0.d0; PE(8)=0.d0
 !              CEconj(:)=0.d0; PE(9)=0.d0

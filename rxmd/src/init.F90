@@ -1,13 +1,13 @@
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(atype, pos, v, f, q)
+SUBROUTINE INITSYSTEM(ffp, av)
+use base; use parameters; use atoms; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
-use parameters; use atoms; use MemoryAllocator
 implicit none
 
-real(8),allocatable,dimension(:) :: atype, q
-real(8),allocatable,dimension(:,:) :: pos,v,f
+type(forcefield_params),intent(in) :: ffp 
+type(atom_vars),intent(in) :: av
 
 integer :: i,j,k, ity, l(3), ist=0
 real(8) :: mm, gmm, dns, mat(3,3)
@@ -120,22 +120,22 @@ do i=1,3
 enddo    
 
 !--- dt/2*mass, mass/2
-call allocatord1d(dthm, 1, nso)
-call allocatord1d(hmas, 1, nso)
-do ity=1, nso
-   dthm(ity) = dt*0.5d0/mass(ity)
-   hmas(ity) = 0.5d0*mass(ity)
+call allocatord1d(dthm, 1, ffp%nso)
+call allocatord1d(hmas, 1, ffp%nso)
+do ity=1,ffp%nso
+   dthm(ity) = dt*0.5d0/ffp%mass(ity)
+   hmas(ity) = 0.5d0*ffp%mass(ity)
 enddo
 
-call allocatord1d(atype,1,NBUFFER)
-call allocatord1d(q,1,NBUFFER)
-call allocatord2d(pos,1,NBUFFER,1,3)
-call allocatord2d(v,1,NBUFFER,1,3)
-call allocatord2d(f,1,NBUFFER,1,3)
+call allocatord1d(av%atype,1,NBUFFER)
+call allocatord1d(av%q,1,NBUFFER)
+call allocatord2d(av%pos,1,NBUFFER,1,3)
+call allocatord2d(av%v,1,NBUFFER,1,3)
+call allocatord2d(av%f,1,NBUFFER,1,3)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
+call ReadBIN(av%atype, av%pos, av%v, av%q, av%f, trim(DataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
@@ -150,19 +150,19 @@ qtfp(:)=0.d0; qtfv(:)=0.d0
 
 !--- get total number of atoms per type. This will be used to determine
 !--- subroutine cutofflength() 
-allocate(natoms_per_type(nso),ibuf8(nso)) ! NOTE 8byte int is not supported in MemoryAllocator
+allocate(natoms_per_type(ffp%nso),ibuf8(ffp%nso)) ! NOTE 8byte int is not supported in MemoryAllocator
 natoms_per_type(:)=0
 do i=1, NATOMS
-   ity=nint(atype(i))
+   ity=nint(av%atype(i))
    natoms_per_type(ity)=natoms_per_type(ity)+1
 enddo
 
-call MPI_ALLREDUCE(natoms_per_type, ibuf8, nso, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
-natoms_per_type(1:nso)=ibuf8(1:nso)
+call MPI_ALLREDUCE(natoms_per_type, ibuf8, ffp%nso, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+natoms_per_type(1:ffp%nso)=ibuf8(1:ffp%nso)
 deallocate(ibuf8)
 
 !--- determine cutoff distances only for exsiting atom pairs
-call CUTOFFLENGTH()
+call CUTOFFLENGTH(ffp)
 
 !--- update box-related variables
 call UpdateBoxParams()
@@ -218,7 +218,7 @@ qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=
 call allocatori1d(frcindx,1,NBUFFER)
 
 !--- setup potential table
-call POTENTIALTABLE()
+call POTENTIALTABLE(ffp)
 
 !--- get real size of linked list cell
 rcsize(1) = lata/vprocs(1)/cc(1)
@@ -227,13 +227,13 @@ rcsize(3) = latc/vprocs(3)/cc(3)
 maxrcell = maxval(rcsize(1:3))
 
 !--- setup 10[A] radius mesh to avoid visiting unecessary cells 
-call GetNonbondingMesh()
+call GetNonbondingMesh(ffp)
 
 !--- get density 
 mm = 0.d0
 do i=1, NATOMS
-   ity = nint(atype(i))
-   mm = mm + mass(ity)
+   ity = nint(av%atype(i))
+   mm = mm + ffp%mass(ity)
 enddo
 call MPI_ALLREDUCE (mm, gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 dns=gmm/MDBOX*UDENS
@@ -277,7 +277,7 @@ if(myid==0) then
                           trim(FFPath), trim(DataDir), trim(ParmPath)
 
    print'(a30 $)','# of atoms per type:'
-   do ity=1, nso
+   do ity=1,ffp%nso
       if(natoms_per_type(ity)>0) print'(i12,a2,i2 $)',natoms_per_type(ity),' -',ity
    enddo
    print*
@@ -291,12 +291,13 @@ endif
 END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITVELOCITY(atype, v)
+SUBROUTINE INITVELOCITY(ffp, atype, v)
 use parameters; use atoms
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp 
 real(8) :: atype(NBUFFER)
 real(8) :: v(3,NBUFFER)
 
@@ -331,8 +332,8 @@ enddo
 vCM(:)=0.d0;  mm = 0.d0
 do i=1, NATOMS
    ity = nint(atype(i))
-   vCM(1:3)=vCM(1:3) + mass(ity)*v(i,1:3)
-   mm = mm + mass(ity)
+   vCM(1:3)=vCM(1:3) + ffp%mass(ity)*v(i,1:3)
+   mm = mm + ffp%mass(ity)
 enddo
  
 call MPI_ALLREDUCE (vCM, GvCM, size(vCM), MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
@@ -360,35 +361,37 @@ v(:,:) = vfactor * v(:,:)
 end subroutine
 
 !------------------------------------------------------------------------------------------
-subroutine CUTOFFLENGTH()
+subroutine CUTOFFLENGTH(ffp)
 use atoms; use parameters
 !------------------------------------------------------------------------------------------
 implicit none
+type(forcefield_params),intent(in) :: ffp 
+
 integer :: ity,jty,inxn
 real(8) :: dr,BOsig
 
 !--- cutoff_vpar30 = cutof2_bo*vpar30, used in BOPRIM()
-cutoff_vpar30 = cutof2_bo*vpar30
+cutoff_vpar30 = cutof2_bo*ffp%vpar30
 
 !--- get the cutoff length based on sigma bonding interaction.
 
 ! --- Remark --- 
 ! sigma bond before correction is the longest, namely longer than than pi and double-pi bonds
 ! thus check only sigma bond convergence.
-allocate(rc(nboty), rc2(nboty), stat=ast)
+allocate(rc(ffp%nboty), rc2(ffp%nboty), stat=ast)
 
 rc(:)=0.d0; rc2(:)=0.d0
-do ity=1,nso
-do jty=ity, nso
+do ity=1,ffp%nso
+do jty=ity,ffp%nso
 
-   inxn=inxn2(ity,jty)
+   inxn=ffp%inxn2(ity,jty)
    if(inxn==0) cycle
 
    dr = 1.0d0
    BOsig=1.d0
    do while (BOsig > MINBOSIG) 
       dr = dr + 0.01d0
-      BOsig = exp( pbo1(inxn)*(dr/r0s(ity,jty))**pbo2(inxn) ) !<- sigma bond prime
+      BOsig = exp( ffp%pbo1(inxn)*(dr/ffp%r0s(ity,jty))**ffp%pbo2(inxn) ) !<- sigma bond prime
    enddo
 
    rc(inxn)  = dr
@@ -401,12 +404,12 @@ enddo
 ! the longest bond-order cutoff length. the check below is to ignore
 ! such atoms to keep the linkedlist cell dimensions as small as possible.
 !----------------------------------------------------------------------------
-do ity=1, nso
+do ity=1,ffp%nso
    if(natoms_per_type(ity)==0) then
-      do jty=1, nso
-         inxn=inxn2(ity,jty)
+      do jty=1,ffp%nso
+         inxn=ffp%inxn2(ity,jty)
          if(inxn/=0) rc(inxn)=0.d0
-         inxn=inxn2(jty,ity)
+         inxn=ffp%inxn2(jty,ity)
          if(inxn/=0) rc(inxn)=0.d0
       enddo
    endif
@@ -418,10 +421,12 @@ maxrc=maxval(rc(:))
 end subroutine
 
 !------------------------------------------------------------------------------------------
-subroutine POTENTIALTABLE()
+subroutine POTENTIALTABLE(ffp)
 use atoms; use parameters; use MemoryAllocator
 !------------------------------------------------------------------------------------------
 implicit none
+type(forcefield_params),intent(in) :: ffp 
+
 integer :: i, ity,jty,inxn
 real(8) :: dr1, dr2, dr3, dr4, dr5, dr6, dr7
 
@@ -431,18 +436,18 @@ real(8) :: Tap, dTap, fn13, dfn13, dr3gamij, rij_vd1
 
 !--- first element in table 0: potential
 !---                        1: derivative of potential
-call allocatord3d(TBL_EClmb,0,1,1,NTABLE,1,nboty)
-call allocatord3d(TBL_Evdw,0,1,1,NTABLE,1,nboty)
-call allocatord2d(TBL_EClmb_QEq,1,NTABLE,1,nboty)
+call allocatord3d(TBL_EClmb,0,1,1,NTABLE,1,ffp%nboty)
+call allocatord3d(TBL_Evdw,0,1,1,NTABLE,1,ffp%nboty)
+call allocatord2d(TBL_EClmb_QEq,1,NTABLE,1,ffp%nboty)
 
 !--- unit distance in r^2 scale
-UDR = rctap2/NTABLE
+UDR = ffp%rctap2/NTABLE
 UDRi = 1.d0/UDR
 
-do ity=1, nso
-do jty=ity, nso
+do ity=1, ffp%nso
+do jty=ity, ffp%nso
 
-   inxn = inxn2(ity,jty)
+   inxn = ffp%inxn2(ity,jty)
    if(inxn/=0) then
       do i=1, NTABLE
 
@@ -450,11 +455,11 @@ do jty=ity, nso
          dr1 = sqrt(dr2)
 
 !--- Interaction Parameters:
-         gamWij = gamW(ity,jty)
-         alphaij = alpij(ity,jty)
-         Dij0 = Dij(ity,jty)
-         rvdW0 = rvdW(ity,jty) 
-         gamwinvp = (1.d0/gamWij)**pvdW1
+         gamWij = ffp%gamW(ity,jty)
+         alphaij = ffp%alpij(ity,jty)
+         Dij0 = ffp%Dij(ity,jty)
+         rvdW0 = ffp%rvdW(ity,jty) 
+         gamwinvp = (1.d0/gamWij)**ffp%pvdW1
 
          dr3 = dr1*dr2
          dr4 = dr2*dr2
@@ -462,14 +467,14 @@ do jty=ity, nso
          dr6 = dr2*dr2*dr2
          dr7 = dr1*dr2*dr2*dr2 
 
-         rij_vd1 = dr2**pvdW1h
-         Tap = CTap(7)*dr7 + CTap(6)*dr6 + &
-               CTap(5)*dr5 + CTap(4)*dr4 + CTap(0)
-         fn13 = (rij_vd1 + gamwinvp)**pvdW1inv
+         rij_vd1 = dr2**ffp%pvdW1h
+         Tap = ffp%CTap(7)*dr7 + ffp%CTap(6)*dr6 + &
+               ffp%CTap(5)*dr5 + ffp%CTap(4)*dr4 + ffp%CTap(0)
+         fn13 = (rij_vd1 + gamwinvp)**ffp%pvdW1inv
          exp1 = exp( alphaij*(1.d0 - fn13 / rvdW0) )
          exp2 = sqrt(exp1)
 
-         dr3gamij = ( dr3 + gamij(ity,jty) )**( -1.d0/3.d0 )
+         dr3gamij = ( dr3 + ffp%gamij(ity,jty) )**( -1.d0/3.d0 )
 
 !!--- Energy Calculation:
 !      PEvd = Tap*Dij0*(exp1 - 2d0*exp2)      
@@ -483,10 +488,10 @@ do jty=ity, nso
 !if(inxn==1.and.myid==0) print*,i,TBL_Evdw(i,inxn,0), TBL_Eclmb(i,inxn,0)
 
 !--- Force Calculation:
-         dTap = 7d0*CTap(7)*dr5 + 6d0*CTap(6)*dr4 + &
-                5d0*CTap(5)*dr3 + 4d0*CTap(4)*dr2
+         dTap = 7d0*ffp%CTap(7)*dr5 + 6d0*ffp%CTap(6)*dr4 + &
+                5d0*ffp%CTap(5)*dr3 + 4d0*ffp%CTap(4)*dr2
 
-         dfn13 = ((rij_vd1 + gamwinvp)**(pvdW1inv-1.d0)) * (dr2**(pvdW1h-1.d0)) 
+         dfn13 = ((rij_vd1 + gamwinvp)**(ffp%pvdW1inv-1.d0)) * (dr2**(ffp%pvdW1h-1.d0)) 
 
 !      CEvdw = Dij0*( dTap*(exp1 - 2.d0*exp2)  &
 !           - Tap*(alphaij/rvdW0)*(exp1 - exp2)*dfn13 )
@@ -505,11 +510,13 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------
-subroutine GetNonbondingMesh()
+subroutine GetNonbondingMesh(ffp)
 use atoms; use parameters; use MemoryAllocator
 ! setup 10[A] radius mesh to avoid visiting unecessary cells 
 !----------------------------------------------------------------
 implicit none
+
+type(forcefield_params),intent(in) :: ffp 
 
 integer :: i,j,k
 
@@ -529,7 +536,7 @@ nblcsize(1:3)=latticePerNode(1:3)/nbcc(1:3)
 maxrcell = maxval(nblcsize(1:3))
 
 !--- get # of linked list cell to cover up the non-bonding (10[A]) cutoff length
-imesh(1:3)  = int(rctap/nblcsize(1:3)) + 1
+imesh(1:3)  = int(ffp%rctap/nblcsize(1:3)) + 1
 maximesh = maxval(imesh(1:3))
 
 !--- List up only cell indices within the cutoff range.
@@ -548,7 +555,7 @@ do k=-imesh(3), imesh(3)
    enddo
    rr(1:3) = ii(1:3)*nblcsize(1:3)
    dr2 = sum(rr(1:3)*rr(1:3))
-   if(dr2 <= rctap**2) nbnmesh = nbnmesh + 1
+   if(dr2 <= ffp%rctap**2) nbnmesh = nbnmesh + 1
 enddo; enddo; enddo
 
 call allocatori2d(nbmesh,1,3,1,nbnmesh)
@@ -568,7 +575,7 @@ do k=-imesh(3), imesh(3)
    enddo
    rr(1:3) = ii(1:3)*nblcsize(1:3)
    dr2 = sum(rr(1:3)*rr(1:3))
-   if(dr2 <= rctap**2) then
+   if(dr2 <= ffp%rctap**2) then
       nbnmesh = nbnmesh + 1
       nbmesh(1:3,nbnmesh) = (/i, j, k/)
    endif

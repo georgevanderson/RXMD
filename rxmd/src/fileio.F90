@@ -1,8 +1,10 @@
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(atype, pos, v, q, fileNameBase)
-use atoms 
+subroutine OUTPUT(ffp, atype, pos, v, q, fileNameBase)
+use atoms; use parameters
 !----------------------------------------------------------------------------------------
 implicit none
+
+type(forcefield_params),intent(in) :: ffp
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(in) :: pos(NBUFFER,3),v(NBUFFER,3)
@@ -13,7 +15,7 @@ if(isBinary) then
 endif
 
 if(isBondFile) call WriteBND(fileNameBase)
-if(isPDB) call WritePDB(fileNameBase)
+if(isPDB) call WritePDB(ffp, fileNameBase)
 
 return
 
@@ -144,11 +146,12 @@ return
 end subroutine
 
 !--------------------------------------------------------------------------
-subroutine WritePDB(fileNameBase)
+subroutine WritePDB(ffp, fileNameBase)
 use parameters
 !--------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i, ity, igd, l2g
@@ -211,7 +214,7 @@ do i=1, NATOMS
   ss = q(i)*10 ! 10x atomic charge
 
   igd = l2g(atype(i))
-  write(PDBOneLine,100)'ATOM  ',0, atmname(ity), igd, pos(i,1:3), tt, ss
+  write(PDBOneLine,100)'ATOM  ',0, ffp%atmname(ity), igd, pos(i,1:3), tt, ss
 
   PDBOneLine(PDBLineSize:PDBLineSize)=NEW_LINE('A')
   PDBAllLines=trim(PDBAllLines)//trim(PDBOneLine)

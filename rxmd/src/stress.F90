@@ -1,9 +1,11 @@
 !--------------------------------------------------------------------------------------------------------------
-subroutine stress(atype, pos, v, f)
+subroutine stress(mass, atype, pos, v, f)
 use atoms; use parameters
 ! calculate stress tensor components of kinetic energy part. 
 !--------------------------------------------------------------------------------------------------------------
 implicit none
+
+real(8),allocatable,dimension(:) :: mass
 
 real(8) :: atype(NBUFFER),pos(NBUFFER,3),v(NBUFFER,3),f(NBUFFER,3)
 
