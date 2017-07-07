@@ -121,12 +121,14 @@ endif
 !--- by here, we got new atom positions in the normalized coordinate, need to update real coordinates.
 if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(pos,rreal,copyptr(6))
 
-!--- for array size stat
-if(mod(nstep,pstep)==0) then
-  ni=nstep/pstep+1
-  if(imode==MODE_MOVE) maxas(ni,4)=na/ne
-  if(imode==MODE_COPY) maxas(ni,5)=na/ne
-endif
+!! FIXME
+! disable the array size statistics since it requires rxmd_param_type%pstep deep inside this routine.
+!!--- for array size stat
+!if(mod(nstep,pstep)==0) then
+!  ni=nstep/pstep+1
+!  if(imode==MODE_MOVE) maxas(ni,4)=na/ne
+!  if(imode==MODE_COPY) maxas(ni,5)=na/ne
+!endif
 
 call system_clock(ttj,tk)
 it_timer(4)=it_timer(4)+(ttj-tti)

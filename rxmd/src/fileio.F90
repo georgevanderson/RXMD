@@ -1,31 +1,32 @@
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(ffp, atype, pos, v, q, fileNameBase)
-use atoms; use parameters
+subroutine OUTPUT(ffp, avs, rxp, fileNameBase)
+use base; use atoms; use parameters; use rxmd_params
 !----------------------------------------------------------------------------------------
 implicit none
 
+type(atom_vars),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
+type(rxmd_param_type),intent(in) :: rxp
 
-real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: pos(NBUFFER,3),v(NBUFFER,3)
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
-if(isBinary) then
-  call WriteBIN(atype,pos,v,q,fileNameBase)
+if(rxp%isBinary) then
+  call WriteBIN(avs, rxp, fileNameBase)
 endif
 
-if(isBondFile) call WriteBND(fileNameBase)
-if(isPDB) call WritePDB(ffp, fileNameBase)
+if(rxp%isBondFile) call WriteBND(avs, fileNameBase)
+if(rxp%isPDB) call WritePDB(ffp, avs, fileNameBase)
 
 return
 
 Contains 
 
 !--------------------------------------------------------------------------
-subroutine WriteBND(fileNameBase)
+subroutine WriteBND(avs, fileNameBase)
 !--------------------------------------------------------------------------
 implicit none
 
+type(atom_vars),intent(in) :: avs 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i, ity, j, j1, jty, m
@@ -97,18 +98,18 @@ BNDALLLines=""
 
 BNDLineSize=0
 do i=1, NATOMS
-   ity = nint(atype(i))
+   ity = nint(avs%atype(i))
 !--- get global ID for i-atom
-   igd = l2g(atype(i))
+   igd = l2g(avs%atype(i))
 
 !--- count the number bonds to be shown.
    bndlist(0)=0
    do j1 = 1, nbrlist(i,0)
       j = nbrlist(i,j1)
-      jty = nint(atype(j))
+      jty = nint(avs%atype(j))
 
 !--- get global ID for j-atom
-      jgd = l2g(atype(j))
+      jgd = l2g(avs%atype(j))
 
 !--- if bond order is less than 0.3, ignore the bond.
       if( BO(0,i,j1) < 0.3d0) cycle
@@ -119,7 +120,7 @@ do i=1, NATOMS
    enddo
 
    BNDOneLine=""
-   write(BNDOneLine,200) igd, pos(i,1:3),nint(atype(i)),bndlist(0), &
+   write(BNDOneLine,200) igd, avs%pos(i,1:3),nint(avs%atype(i)),bndlist(0), &
          (bndlist(j1),bndordr(j1),j1=1,bndlist(0))
 
    ! remove space and add new_line
@@ -146,11 +147,12 @@ return
 end subroutine
 
 !--------------------------------------------------------------------------
-subroutine WritePDB(ffp, fileNameBase)
+subroutine WritePDB(ffp, avs, fileNameBase)
 use parameters
 !--------------------------------------------------------------------------
 implicit none
 
+type(atom_vars),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
@@ -200,9 +202,9 @@ call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 
 do i=1, NATOMS
 
-  ity = nint(atype(i))
+  ity = nint(avs%atype(i))
 !--- calculate atomic temperature 
-  tt = hmas(ity)*sum(v(i,1:3)*v(i,1:3))
+  tt = hmas(ity)*sum(avs%v(i,1:3)*avs%v(i,1:3))
   tt = tt*UTEMP*1d-2 !scale down to use two decimals in PDB format 
 
 !--- sum up diagonal atomic stress components 
@@ -211,10 +213,10 @@ do i=1, NATOMS
 #endif
   ss = ss*USTRS
 
-  ss = q(i)*10 ! 10x atomic charge
+  ss = avs%q(i)*10 ! 10x atomic charge
 
-  igd = l2g(atype(i))
-  write(PDBOneLine,100)'ATOM  ',0, ffp%atmname(ity), igd, pos(i,1:3), tt, ss
+  igd = l2g(avs%atype(i))
+  write(PDBOneLine,100)'ATOM  ',0, ffp%atmname(ity), igd, avs%pos(i,1:3), tt, ss
 
   PDBOneLine(PDBLineSize:PDBLineSize)=NEW_LINE('A')
   PDBAllLines=trim(PDBAllLines)//trim(PDBOneLine)
@@ -356,13 +358,14 @@ return
 end
 
 !--------------------------------------------------------------------------
-subroutine WriteBIN(atype, rreal, v, q, fileNameBase)
-use atoms
+subroutine WriteBIN(avs, rxp, fileNameBase)
+use base; use rxmd_params; use atoms
 !--------------------------------------------------------------------------
 implicit none
 
-real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: rreal(NBUFFER,3),v(NBUFFER,3)
+type(atom_vars),intent(in) :: avs 
+type(rxmd_param_type),intent(in) :: rxp
+
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i,j
@@ -381,9 +384,7 @@ real(8) :: rnorm(3,NBUFFER)
 integer :: ti,tj,tk
 call system_clock(ti,tk)
 
-call xu2xs(rreal,rnorm,NATOMS)
-
-if(.not. isBinary) return
+call xu2xs(avs%pos,rnorm,NATOMS)
 
 ! Meta Data: 
 !  Total Number of MPI ranks and MPI ranks in xyz (4 integers)
@@ -409,7 +410,7 @@ ldata(:)=0
 ldata(4+myid+1)=NATOMS
 call MPI_ALLREDUCE(ldata,gdata,nmeta,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
 gdata(1)=nprocs
-gdata(2:4)=vprocs
+gdata(2:4)=rxp%vprocs
 gdata(nmeta)=nstep+current_step
 
 ddata(1)=lata; ddata(2)=latb; ddata(3)=latc
@@ -434,9 +435,9 @@ allocate(dbuf(10*NATOMS))
 do i=1, NATOMS
    j = (i - 1)*10
    dbuf(j+1:j+3)=rnorm(i,1:3)
-   dbuf(j+4:j+6)=v(i,1:3)
-   dbuf(j+7)=q(i)
-   dbuf(j+8)=atype(i)
+   dbuf(j+4:j+6)=avs%v(i,1:3)
+   dbuf(j+7)=avs%q(i)
+   dbuf(j+8)=avs%atype(i)
    dbuf(j+9)=qsfp(i)
    dbuf(j+10)=qsfv(i)
 enddo

@@ -11,16 +11,145 @@ end module
 !-------------------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------------------
+module cmdline_args
+!-------------------------------------------------------------------------------------------
+
+integer,parameter :: MAXPATHLENGTH=256
+
+type cmdline_arg_type
+
+  logical :: saveRunProfile=.false.
+  logical :: isFF=.false., isData=.false., isMDparm=.false.
+  character(MAXPATHLENGTH) :: FFPath="ffield", DataDir="DAT", ParmPath="rxmd.in"
+
+end type cmdline_arg_type 
+
+contains 
+
+subroutine GetCmdLineArgs(cla)
+implicit none
+
+type(cmdline_arg_type) :: cla
+integer :: i
+character(MAXPATHLENGTH) :: argv
+
+!--- read FF file, output dir, MD parameter file paths from command line
+do i=1, command_argument_count()
+   call get_command_argument(i,argv)
+   select case(adjustl(argv))
+     case("--help","-h")
+       print'(a)', "--ffield ffield --outDir DAT --rxmdin rxmd.in"
+       stop
+     case("--ffield", "-ff")
+       call get_command_argument(i+1,argv)
+       cla%FFPath=adjustl(argv)
+     case("--outDir", "-o")
+       call get_command_argument(i+1,argv)
+       cla%DataDir=adjustl(argv)
+     case("--rxmdin", "-in")
+       call get_command_argument(i+1,argv)
+       cla%ParmPath=adjustl(argv)
+     case("--profile")
+       cla%saveRunProfile=.true.
+     case default
+   end select
+
+enddo
+end subroutine
+
+end module cmdline_args
+
+!-------------------------------------------------------------------------------------------
+module rxmd_params
+!-------------------------------------------------------------------------------------------
+
+type rxmd_param_type
+! MD mode
+   integer :: mdmode
+
+! one time step in femto second.
+   real(8) :: dt
+   
+! number of MD steps for current run. 
+   integer :: ntime_step 
+   
+! requested temperature. 
+   real(8) :: treq 
+   
+! velocity scaling factor.
+   real(8) :: vsfact
+   
+! temperature scaling steps.
+   integer :: sstep
+
+! call OUTPUT() every fstep MD steps and save data into files if their flags are on.
+   integer :: fstep
+
+! call PRINTE() every pstep MD steps to show value of energy terms.
+   integer :: pstep
+   
+! number of processers in [xyz] directions. 
+   integer :: vprocs(3)
+   
+!--- QEq related variables. 
+! flag to run QEq routine: 0-No QEq, 1-CG, 2-Extended Lagrangian
+   integer :: isQEq
+   
+! Number of MAXimum iteration in QEq routine. 
+   integer :: NMAXQEq
+   
+! energy convergence criterion in QEq routine.
+   real(8) :: QEq_tol
+
+!  call QEq() every qstep MD steps.
+   integer :: qstep
+
+!  variables for extended Lagurangian method.
+   real(8) :: Lex_fqs=1.0, Lex_k=2.d0
+
+! flags to tell which file to be saved. 
+   logical :: isBinary, isBondFile, isPDB
+
+! tolerance of energy convergence in conjugate gradient.
+   real(8) :: ftol   
+
+end type rxmd_param_type
+
+contains
+
+!-------------------------------------------------------------------------------------------
+subroutine GetRxmdParams(rxp, paramPath)
+implicit none
+!-------------------------------------------------------------------------------------------
+
+type(rxmd_param_type),intent(out) :: rxp
+character(*),intent(in) :: paramPath
+
+!--- read MD control parameters
+open(1, file=trim(paramPath), status="old")
+read(1,*) rxp%mdmode
+read(1,*) rxp%dt, rxp%ntime_step
+read(1,*) rxp%treq, rxp%vsfact, rxp%sstep
+read(1,*) rxp%fstep, rxp%pstep
+read(1,*) rxp%vprocs(1:3)
+read(1,*) rxp%isQEq, rxp%NMAXQEq, rxp%QEq_tol, rxp%qstep
+read(1,*) rxp%Lex_fqs, rxp%Lex_k
+read(1,*) rxp%isBinary, rxp%isBondFile, rxp%isPDB
+read(1,*) rxp%ftol
+close(1)
+
+end subroutine 
+
+end module rxmd_params
+
+
+!-------------------------------------------------------------------------------------------
 module atoms
 !-------------------------------------------------------------------------------------------
 include 'mpif.h'
 
-!--- command arguments 
-logical :: isFF=.false., isData=.false., isMDparm=.false.
 integer,parameter :: MAXPATHLENGTH=256
-character(MAXPATHLENGTH) :: FFPath="ffield", DataDir="DAT", ParmPath="rxmd.in"
 
-logical :: saveRunProfile=.false.
 character(MAXPATHLENGTH) :: RunProfilePath="profile.dat"
 integer,parameter :: RunProfileFD=30 ! file descriptor for summary file
 
@@ -64,8 +193,6 @@ integer,parameter :: MAXLAYERS_NB=10
 ! if targe_node(i)==-1, the node doesn't have a partner in i-direction.
 integer :: target_node(6)
 
-! For benchmarking, <vprocs> and <mc> will be read from vprocs.in
-integer :: vprocs(3)
 
 !<mc(3)> # of unit cells in each directions
 integer :: mc(3)
@@ -161,9 +288,6 @@ real(8),allocatable :: deltalp(:)
 real(8) :: TE, KE, PE(0:13)
 real(8) :: GTE, GKE, GPE(0:13)
 
-!--- output file format 
-logical :: isBinary, isBondFile, isPDB
-
 !--- one vector charge equlibration
 ! g: gradient,  h: conjugate direction, hsh: hessian * h
 !real(8),allocatable :: g(:), h(:), hsh(:)
@@ -176,7 +300,7 @@ real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
 !<Lex_w> spring constant
 real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:) 
 real(8),allocatable :: hessian(:,:)
-real(8) :: Lex_fqs=1.0, Lex_w=1.d0, Lex_w2=1.d0, Lex_k=2.d0
+real(8) :: Lex_w=1.d0, Lex_w2=1.d0
  
 integer :: ast ! Allocation STatus of allocatable variables.
 
@@ -216,32 +340,18 @@ real(8),parameter :: USTRS = 6.94728103d0     ! [GPa]
 real(8),parameter :: UDENS = 1.66053886d0     ! [g/cc]
 real(8),parameter :: UTIME = 1.d3/20.455d0    ! 1 = 1/20.445[ps] = 48.88780[fs]
 
-!--- QEq variables. 
-!<isQEq> flag to run QEq routine: 0-No QEq, 1-CG, 2-Extended Lagrangian
-integer :: isQEq
-!<NMAXQEq> Number of MAXimum iteration in QEq routine
-integer :: NMAXQEq
-!<QEq_thrsld> energy criterion in QEq routine
-real(8) :: QEq_tol
 !<nstep_qeq> counter of iteration
-integer :: nstep_qeq, qstep
+integer :: nstep_qeq
 
 !-- variables for timing
 integer,parameter :: Ntimer=30
 integer :: it_timer(Ntimer)=0, it_timer_max(Ntimer)=0, it_timer_min(Ntimer)=0
 
-!---
-! <mdmode> determines MD mode
-integer :: mdmode
-! <nstep> current MD step, <ntime_step> Total # of time steps in one MD run.
+! <nstep> current MD step, 
 ! <current_step> will be used for subsequent runs.
-integer :: nstep=0, ntime_step, current_step
-!<vsfact> velocity scaling factor, <dt> one time step
-real(8) :: treq, vsfact, dt, dmt
-integer :: sstep
+integer :: nstep=0, current_step
 
-!--- output format flags, explained in 'rxmdopt.in'
-integer :: fstep, pstep
+real(8) :: dmt
 
 !--- <frcindx> FoRCe INDeX. Index to return calculated force to original atoms.
 integer,allocatable :: frcindx(:)
@@ -251,9 +361,6 @@ integer :: copyptr(0:6)
 real(8) :: xx,yy,zz,yz,zx,xy
 !--- atomic stress index
 integer :: ia,ja
-
-!--- conjugate_gradient
-REAL(8) :: ftol   ! tolerance of energy convergence 
 
 !--- cutoff range calculation. 
 integer(8),allocatable :: natoms_per_type(:)
@@ -278,22 +385,24 @@ character(len=256) function rankToString(irank)
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
 integer,intent(in) :: irank
+
 write(rankToString,*) irank
 rankToString = adjustl(rankToString)
+
 end function rankToString
 
 !-------------------------------------------------------------------------------------------
-function GetFileNameBase(nstep) result(fileNameBase)
+function GetFileNameBase(dataDir, nstep) result(fileNameBase)
 !-------------------------------------------------------------------------------------------
 integer,intent(in) :: nstep
-character(MAXPATHLENGTH) :: fileNameBase
+character(MAXPATHLENGTH) :: dataDir, fileNameBase
 character(9) :: a9
 
 if(nstep>=0) then
   write(a9,'(i9.9)') nstep
-  fileNameBase=trim(adjustl(DataDir))//"/"//a9
+  fileNameBase=trim(adjustl(dataDir))//"/"//a9
 else
-  fileNameBase=trim(adjustl(DataDir))//"/rxff"
+  fileNameBase=trim(adjustl(dataDir))//"/rxff"
 endif
 
 end function

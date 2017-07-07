@@ -1,13 +1,15 @@
 !------------------------------------------------------------------------------
 program rxmd
-use base; use atoms; use parameters; use CG
+use base; use atoms; use rxmd_params; use cmdline_args; use parameters; use CG
 !------------------------------------------------------------------------------
 implicit none
 integer :: i,it1,it2,irt,provided
 real(8) :: ctmp, dr(3)
 
 type(forcefield_params) :: ffp
-type(atom_vars) :: av
+type(atom_vars) :: avs
+type(rxmd_param_type) :: rxp
+type(cmdline_arg_type) :: cla
 
 !call MPI_INIT(ierr)
 call MPI_INIT_THREAD(MPI_THREAD_SERIALIZED,provided,ierr)
@@ -16,75 +18,81 @@ call MPI_COMM_SIZE(MPI_COMM_WORLD, nprocs, ierr)
 
 if(myid==0)  print'(a30)', 'rxmd has started'
 
+call GetCmdLineArgs(cla)
+
 !--- read ffield file
-CALL GETPARAMS(ffp, FFPath, FFDescript)
+CALL GETPARAMS(ffp, cla%FFPath, FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(ffp, av)
+CALL INITSYSTEM(ffp, avs, rxp, cla)
 
-if(mdmode==10) call ConjugateGradient(av%atype,av%pos)
+if(rxp%mdmode==10) call ConjugateGradient(avs%atype, avs%pos, cla, rxp%ftol)
 
-call QEq(ffp, av%atype, av%pos, av%q)
-call FORCE(ffp, av%atype, av%pos, av%f, av%q)
+call QEq(ffp, rxp, avs%atype, avs%pos, avs%q)
+call FORCE(ffp, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
 
-do nstep=0, ntime_step-1
+do nstep=0, rxp%ntime_step-1
 
-   if(mod(nstep,pstep)==0) then
-       call PRINTE(av%atype, av%v, av%q)
-       if(saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
+   if(mod(nstep, rxp%pstep)==0) then
+       call PRINTE(rxp%pstep, avs%atype, avs%v, avs%q)
+       if(cla%saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
-   if(mod(nstep,fstep)==0) &
-        call OUTPUT(ffp, av%atype, av%pos, av%v, av%q, GetFileNameBase(current_step+nstep))
+   if(mod(nstep, rxp%fstep)==0) &
+        call OUTPUT(ffp, avs, rxp, GetFileNameBase(cla%dataDir, current_step+nstep))
 
-   if(mod(nstep,sstep)==0.and.mdmode==4) &
-      av%v(1:NATOMS,1:3)=vsfact*av%v(1:NATOMS,1:3)
+   if(mod(nstep, rxp%sstep)==0 .and. rxp%mdmode==4) &
+      avs%v(1:NATOMS,1:3)=rxp%vsfact*avs%v(1:NATOMS,1:3)
 
-   if(mod(nstep,sstep)==0.and.mdmode==5) then
-      ctmp = (treq*UTEMP0)/( GKE*UTEMP )
-      av%v(1:NATOMS,1:3)=sqrt(ctmp)*av%v(1:NATOMS,1:3)
+   if(mod(nstep,rxp%sstep)==0 .and. rxp%mdmode==5) then
+      ctmp = (rxp%treq*UTEMP0)/( GKE*UTEMP )
+      avs%v(1:NATOMS,1:3)=sqrt(ctmp)*avs%v(1:NATOMS,1:3)
    endif
 
-   if(mod(nstep,sstep)==0.and.(mdmode==0.or.mdmode==6)) &
-      call INITVELOCITY(av%atype, av%v)
+   if(mod(nstep,rxp%sstep)==0.and.(rxp%mdmode==0.or.rxp%mdmode==6)) &
+      call INITVELOCITY(avs%atype, avs%v)
 
 !--- correct the c.o.m motion
-   if(mod(nstep,sstep)==0.and.mdmode==7) &
-      call ScaleTemperature(ffp, av%atype, av%v)
+   if(mod(nstep,rxp%sstep)==0.and.rxp%mdmode==7) &
+      call ScaleTemperature(ffp, rxp%treq, avs%atype, avs%v)
 
 !--- update velocity
-   call vkick(1.d0, av%atype, av%v, av%f) 
+   call vkick(1.d0, avs%atype, avs%v, avs%f) 
 
 !--- update coordinates
-   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(av%q(1:NATOMS)-qsfp(1:NATOMS))
-   qsfp(1:NATOMS)=qsfp(1:NATOMS)+dt*qsfv(1:NATOMS)
+   qsfv(1:NATOMS) = qsfv(1:NATOMS) + &
+      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:NATOMS)-qsfp(1:NATOMS))
 
-   av%pos(1:NATOMS,1:3)=av%pos(1:NATOMS,1:3)+dt*av%v(1:NATOMS,1:3)
+   qsfp(1:NATOMS) = qsfp(1:NATOMS) + rxp%dt*qsfv(1:NATOMS)
+
+   avs%pos(1:NATOMS,1:3) = avs%pos(1:NATOMS,1:3) + rxp%dt * avs%v(1:NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
-   call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],av%atype, av%pos, av%v, av%f, av%q)
+   call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],avs%atype, avs%pos, avs%v, avs%f, avs%q, rxp%pstep)
    
-   if(mod(nstep,qstep)==0) call QEq(ffp, av%atype, av%pos, av%q)
-   call FORCE(ffp, av%atype, av%pos, av%f, av%q)
+   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, rxp, avs%atype, avs%pos, avs%q)
+   call FORCE(ffp, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- update velocity
-   call vkick(1.d0, av%atype, av%v, av%f) 
-   qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(av%q(1:NATOMS)-qsfp(1:NATOMS))
+   call vkick(1.d0, avs%atype, avs%v, avs%f) 
+
+   qsfv(1:NATOMS) = qsfv(1:NATOMS) +  &
+      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:NATOMS)-qsfp(1:NATOMS))
 
 enddo
 
 !--- save the final configurations
-call OUTPUT(ffp, av%atype, av%pos, av%v, av%q,  GetFileNameBase(current_step+nstep))
+call OUTPUT(ffp, avs, rxp, GetFileNameBase(cla%dataDir, current_step+nstep))
 
 !--- update rxff.bin in working directory for continuation run
-call WriteBIN(av%atype, av%pos, av%v, av%q, GetFileNameBase(-1))
+if(rxp%isBinary) call WriteBIN(avs, rxp, GetFileNameBase(cla%dataDir, -1))
 
 call system_clock(it2,irt)
 it_timer(Ntimer)=(it2-it1)
 
-call FinalizeMD(irt)
+call FinalizeMD(cla%saveRunProfile, irt)
 
 call MPI_FINALIZE(ierr)
 end PROGRAM
@@ -114,13 +122,16 @@ write(fd,*)
 end subroutine
 
 !------------------------------------------------------------------------------
-subroutine FinalizeMD(irt)
+subroutine FinalizeMD(saveRunProfile, irt)
 use atoms; use MemoryAllocator
 !------------------------------------------------------------------------------
 implicit none
-integer :: i
+
+logical,intent(in) :: saveRunProfile
 integer,intent(in) :: irt ! time resolution
 integer,allocatable :: ibuf(:),ibuf1(:)
+
+integer :: i
 
 !--- close summary file
 if(saveRunProfile) close(RunProfileFd)
@@ -207,12 +218,13 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------------------------------
-subroutine PRINTE(atype, v, q)
+subroutine PRINTE(pstep, atype, v, q)
 use atoms; use parameters; use MemoryAllocator
 ! calculate the kinetic energy and sum up all of potential energies, then print them.
 !----------------------------------------------------------------------------------------
 implicit none
 
+integer,intent(in) :: pstep
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(in) :: v(NBUFFER,3)
 
@@ -411,10 +423,12 @@ if(n > MAXNEIGHBS) then
    stop
 endif
 
-!--- for array size stat
-if(mod(nstep,pstep)==0) then
-  maxas(nstep/pstep+1,2)=maxval(nbrlist(1:NATOMS,0))
-endif
+!!FIXME
+!! disable array size statistics for now. 
+!!--- for array size stat
+!if(mod(nstep,rxp%pstep)==0) then
+!  maxas(nstep/pstep+1,2)=maxval(nbrlist(1:NATOMS,0))
+!endif
 
 call system_clock(tj,tk)
 it_timer(5)=it_timer(5)+(tj-ti)
@@ -638,12 +652,14 @@ enddo
 end subroutine
 
 !-----------------------------------------------------------------------
-subroutine ScaleTemperature(ffp, atype, v)
+subroutine ScaleTemperature(ffp, treq, atype, v)
 use atoms; use parameters
 !-----------------------------------------------------------------------
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
+real(8),intent(in) :: treq
+
 real(8) :: atype(NBUFFER), v(NBUFFER,3)
 
 integer :: i,ity

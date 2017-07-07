@@ -1,20 +1,20 @@
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(ffp, av)
-use base; use parameters; use atoms; use MemoryAllocator
+SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla)
+use base; use rxmd_params; use cmdline_args; use parameters; use atoms; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
 implicit none
 
+type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
-type(atom_vars),intent(in) :: av
+type(atom_vars),intent(out) :: avs
+type(rxmd_param_type),intent(out) :: rxp
 
 integer :: i,j,k, ity, l(3), ist=0
 real(8) :: mm, gmm, dns, mat(3,3)
 integer(8) :: i8
 real(8) :: rcsize(3), maxrcell
-
-character(64) :: argv
 
 Interface
    subroutine ReadBIN(atype, pos, v, q, f, fileName)
@@ -24,77 +24,43 @@ Interface
    end subroutine
 end interface
 
-!--- read FF file, output dir, MD parameter file paths from command line
-do i=1, command_argument_count()
-   call get_command_argument(i,argv)
-   select case(adjustl(argv))
-     case("--help","-h")
-       if(myid==0) print'(a)', "--ffield ffield --outDir DAT --rxmdin rxmd.in"
-       stop
-     case("--ffield", "-ff")
-       call get_command_argument(i+1,argv)
-       FFPath=adjustl(argv)
-     case("--outDir", "-o")
-       call get_command_argument(i+1,argv)
-       DataDir=adjustl(argv)
-     case("--rxmdin", "-in")
-       call get_command_argument(i+1,argv)
-       ParmPath=adjustl(argv)
-     case("--profile")
-       saveRunProfile=.true.
-     case default
-   end select
-
-enddo
-
 !--- summary file keeps potential energies, box parameters during MD simulation
 !--- intended to be used for validation of code change. 
-if(saveRunProfile) open(RunProfileFD, file=RunProfilePath, status='unknown')
+if(cla%saveRunProfile) open(RunProfileFD, file=RunProfilePath, status='unknown')
 
-!--- read MD control parameters
-open(1, file=trim(ParmPath), status="old")
-read(1,*) mdmode
-read(1,*) dt, ntime_step
-read(1,*) treq, vsfact, sstep
-read(1,*) fstep, pstep
-read(1,*) vprocs(1:3)
-read(1,*) isQEq, NMAXQEq, QEq_tol, qstep
-read(1,*) Lex_fqs, Lex_k
-read(1,*) isBinary, isBondFile, isPDB
-read(1,*) ftol
-close(1)
+call GetRxmdParams(rxp, cla%ParmPath)
 
 !--- an error trap
-if(vprocs(1)*vprocs(2)*vprocs(3) /= nprocs ) then
+if(rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3) /= nprocs ) then
   if(myid==0) write(6,'(a60,3i3,i5)')  &
-  "ERROR: requested/allocated # of procs are not consistent: ", vprocs(1:3), nprocs
+  "ERROR: requested/allocated # of procs are not consistent: ", rxp%vprocs(1:3), nprocs
   call MPI_FINALIZE(ierr)
   stop
 endif
 
 !--- initialize charge with QEq
-if(mdmode==0) then
+if(rxp%mdmode==0) then
   if(myid==0) then
     print'(a,f12.3,a,i6,a)', &
          'INFO: mdmode==0, setting isQEQ is 1. Atomic velocities are scaled to ', &
-          treq, ' [K] every ', sstep, ' steps.'
+          rxp%treq, ' [K] every ', rxp%sstep, ' steps.'
   endif
-  isQEq=1
+  rxp%isQEq=1
 endif
 
 !--- time unit conversion from [fs] -> time unit
-dt = dt/UTIME
+rxp%dt = rxp%dt/UTIME
 
 !--- square the spring const in the extended Lagrangian method 
-Lex_w2=2.d0*Lex_k/dt/dt
+Lex_w2=2.d0*rxp%Lex_k/rxp%dt/rxp%dt
 
 !--- get reduced temperature from [K]
-treq=treq/UTEMP0
+rxp%treq=rxp%treq/UTEMP0
 
 !--- setup the vector ID and parity for processes, in x, y and z order.
-vID(1)=mod(myid,vprocs(1))
-vID(2)=mod(myid/vprocs(1),vprocs(2))
-vID(3)=myid/(vprocs(1)*vprocs(2))
+vID(1)=mod(myid,rxp%vprocs(1))
+vID(2)=mod(myid/rxp%vprocs(1),rxp%vprocs(2))
+vID(3)=myid/(rxp%vprocs(1)*rxp%vprocs(2))
 myparity(1)=mod(vID(1),2)
 myparity(2)=mod(vID(2),2)
 myparity(3)=mod(vID(3),2)
@@ -108,13 +74,13 @@ do i=1,3
       l(1:3) = vID(1:3)
 
 !--- apply PBC.
-      l(i)=mod( (vID(i) + j + vprocs(i)), vprocs(i) )
+      l(i)=mod( (vID(i) + j + rxp%vprocs(i)), rxp%vprocs(i) )
      
 !--- get direction index.
       k=k+1 ![123456] 
 
 !--- convert vector ID to sequential ID.
-      target_node(k) = l(1)+l(2)*vprocs(1)+l(3)*vprocs(1)*vprocs(2) 
+      target_node(k) = l(1)+l(2)*rxp%vprocs(1)+l(3)*rxp%vprocs(1)*rxp%vprocs(2) 
    enddo         
                    
 enddo    
@@ -123,19 +89,19 @@ enddo
 call allocatord1d(dthm, 1, ffp%nso)
 call allocatord1d(hmas, 1, ffp%nso)
 do ity=1,ffp%nso
-   dthm(ity) = dt*0.5d0/ffp%mass(ity)
+   dthm(ity) = rxp%dt*0.5d0/ffp%mass(ity)
    hmas(ity) = 0.5d0*ffp%mass(ity)
 enddo
 
-call allocatord1d(av%atype,1,NBUFFER)
-call allocatord1d(av%q,1,NBUFFER)
-call allocatord2d(av%pos,1,NBUFFER,1,3)
-call allocatord2d(av%v,1,NBUFFER,1,3)
-call allocatord2d(av%f,1,NBUFFER,1,3)
+call allocatord1d(avs%atype,1,NBUFFER)
+call allocatord1d(avs%q,1,NBUFFER)
+call allocatord2d(avs%pos,1,NBUFFER,1,3)
+call allocatord2d(avs%v,1,NBUFFER,1,3)
+call allocatord2d(avs%f,1,NBUFFER,1,3)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(av%atype, av%pos, av%v, av%q, av%f, trim(DataDir)//"/rxff.bin")
+call ReadBIN(avs%atype, avs%pos, avs%v, avs%q, avs%f, trim(cla%dataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
@@ -153,7 +119,7 @@ qtfp(:)=0.d0; qtfv(:)=0.d0
 allocate(natoms_per_type(ffp%nso),ibuf8(ffp%nso)) ! NOTE 8byte int is not supported in MemoryAllocator
 natoms_per_type(:)=0
 do i=1, NATOMS
-   ity=nint(av%atype(i))
+   ity=nint(avs%atype(i))
    natoms_per_type(ity)=natoms_per_type(ity)+1
 enddo
 
@@ -165,7 +131,7 @@ deallocate(ibuf8)
 call CUTOFFLENGTH(ffp)
 
 !--- update box-related variables
-call UpdateBoxParams()
+call UpdateBoxParams(rxp)
 
 !--- get global number of atoms
 i8=NATOMS ! Convert 4 byte to 8 byte
@@ -221,42 +187,42 @@ call allocatori1d(frcindx,1,NBUFFER)
 call POTENTIALTABLE(ffp)
 
 !--- get real size of linked list cell
-rcsize(1) = lata/vprocs(1)/cc(1)
-rcsize(2) = latb/vprocs(2)/cc(2)
-rcsize(3) = latc/vprocs(3)/cc(3)
+rcsize(1) = lata/rxp%vprocs(1)/cc(1)
+rcsize(2) = latb/rxp%vprocs(2)/cc(2)
+rcsize(3) = latc/rxp%vprocs(3)/cc(3)
 maxrcell = maxval(rcsize(1:3))
 
 !--- setup 10[A] radius mesh to avoid visiting unecessary cells 
-call GetNonbondingMesh(ffp)
+call GetNonbondingMesh(ffp, rxp)
 
 !--- get density 
 mm = 0.d0
 do i=1, NATOMS
-   ity = nint(av%atype(i))
+   ity = nint(avs%atype(i))
    mm = mm + ffp%mass(ity)
 enddo
 call MPI_ALLREDUCE (mm, gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 dns=gmm/MDBOX*UDENS
 
 !--- allocate & initialize Array size Stat variables
-i=ntime_step/pstep+1
+i=rxp%ntime_step/rxp%pstep+1
 allocate(maxas(i,nmaxas))
 maxas(:,:)=0
 
 !--- print out parameters and open data file
 if(myid==0) then
    write(6,'(a)') "----------------------------------------------------------------"
-   write(6,'(a30,i9,a3,i9)') "req/alloc # of procs:", vprocs(1)*vprocs(2)*vprocs(3), "  /",nprocs
-   write(6,'(a30,3i9)')      "req proc arrengement:", vprocs(1),vprocs(2),vprocs(3)
+   write(6,'(a30,i9,a3,i9)') "req/alloc # of procs:", rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3), "  /",nprocs
+   write(6,'(a30,3i9)')      "req proc arrengement:", rxp%vprocs(1),rxp%vprocs(2),rxp%vprocs(3)
    write(6,'(a30,a70)')      "parameter set:", FFDescript
-   write(6,'(a30,es12.2)')   "time step[fs]:",dt*UTIME
+   write(6,'(a30,es12.2)')   "time step[fs]:",rxp%dt*UTIME
    write(6,'(a30,i3, i10, i10)') "MDMODE CURRENTSTEP NTIMESTPE:", &
-                                  mdmode, current_step, ntime_step
+                                  rxp%mdmode, current_step, rxp%ntime_step
    write(6,'(a30,i6,es10.1,i6,i6)') "isQEq,QEq_tol,NMAXQEq,qstep:", &
-                                     isQEq,QEq_tol,NMAXQEq,qstep
-   write(6,'(a30,f8.3,f8.3)') 'Lex_fqs,Lex_k:',Lex_fqs,Lex_k
-   write(6,'(a30,f12.3,f8.3,i9)') 'treq,vsfact,sstep:',treq*UTEMP0, vsfact, sstep
-   write(6,'(a30,2i6)') 'fstep,pstep:', fstep,pstep
+                                     rxp%isQEq,rxp%QEq_tol,rxp%NMAXQEq,rxp%qstep
+   write(6,'(a30,f8.3,f8.3)') 'Lex_fqs,Lex_k:',rxp%Lex_fqs,rxp%Lex_k
+   write(6,'(a30,f12.3,f8.3,i9)') 'treq,vsfact,sstep:',rxp%treq*UTEMP0, rxp%vsfact, rxp%sstep
+   write(6,'(a30,2i6)') 'fstep,pstep:', rxp%fstep,rxp%pstep
    write(6,'(a30,i24,i24)') "NATOMS GNATOMS:", NATOMS, GNATOMS
    write(6,'(a30,3f12.3)') "LBOX:",LBOX(1:3)
    write(6,'(a30,3f15.3)') "Hmatrix [A]:",HH(1:3,1,0)
@@ -267,14 +233,14 @@ if(myid==0) then
    write(6,'(a30,3f10.4)') "density [g/cc]:",dns
    write(6,'(a30,3i6)')  '# of linkedlist cell:', cc(1:3)
    write(6,'(a30,f10.3,2x,3f10.2)') "maxrc, lcsize [A]:", &
-   maxrc,lata/cc(1)/vprocs(1),latb/cc(2)/vprocs(2),latc/cc(3)/vprocs(3)
+   maxrc,lata/cc(1)/rxp%vprocs(1),latb/cc(2)/rxp%vprocs(2),latc/cc(3)/rxp%vprocs(3)
    write(6,'(a30,3i6)')  '# of linkedlist cell (NB):', nbcc(1:3)
    write(6,'(a30,3f10.2)') "lcsize [A] (NB):", &
-   lata/nbcc(1)/vprocs(1),latb/nbcc(2)/vprocs(2),latc/nbcc(3)/vprocs(3)
+   lata/nbcc(1)/rxp%vprocs(1),latb/nbcc(2)/rxp%vprocs(2),latc/nbcc(3)/rxp%vprocs(3)
    write(6,'(a30,2i6)') "MAXNEIGHBS, MAXNEIGHBS10:", MAXNEIGHBS,MAXNEIGHBS10
    write(6,'(a30,i6,i9)') "NMINCELL, NBUFFER:", NMINCELL, NBUFFER
    write(6,'(a30,3(a12,1x))') "FFPath, DataDir, ParmPath:", &
-                          trim(FFPath), trim(DataDir), trim(ParmPath)
+                          trim(cla%FFPath), trim(cla%dataDir), trim(cla%ParmPath)
 
    print'(a30 $)','# of atoms per type:'
    do ity=1,ffp%nso
@@ -291,12 +257,13 @@ endif
 END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITVELOCITY(ffp, atype, v)
+SUBROUTINE INITVELOCITY(ffp, atype, v, treq)
 use parameters; use atoms
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
 implicit none
 
+real(8),intent(in) :: treq
 type(forcefield_params),intent(in) :: ffp 
 real(8) :: atype(NBUFFER)
 real(8) :: v(3,NBUFFER)
@@ -510,13 +477,14 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------
-subroutine GetNonbondingMesh(ffp)
-use atoms; use parameters; use MemoryAllocator
+subroutine GetNonbondingMesh(ffp, rxp)
+use atoms; use rxmd_params; use parameters; use MemoryAllocator
 ! setup 10[A] radius mesh to avoid visiting unecessary cells 
 !----------------------------------------------------------------
 implicit none
 
 type(forcefield_params),intent(in) :: ffp 
+type(rxmd_param_type),intent(in) :: rxp
 
 integer :: i,j,k
 
@@ -528,9 +496,9 @@ integer :: imesh(3), maximesh, ii(3), i1
 nblcsize(1:3)=3d0
 
 !--- get mesh resolution which is close to the initial value of rlc.
-latticePerNode(1)=lata/vprocs(1)
-latticePerNode(2)=latb/vprocs(2)
-latticePerNode(3)=latc/vprocs(3)
+latticePerNode(1)=lata/rxp%vprocs(1)
+latticePerNode(2)=latb/rxp%vprocs(2)
+latticePerNode(3)=latc/rxp%vprocs(3)
 nbcc(1:3)=int(latticePerNode(1:3)/nblcsize(1:3))
 nblcsize(1:3)=latticePerNode(1:3)/nbcc(1:3)
 maxrcell = maxval(nblcsize(1:3))
@@ -623,10 +591,12 @@ return
 end subroutine
 
 !----------------------------------------------------------------
-subroutine UpdateBoxParams()
-use atoms; use parameters
+subroutine UpdateBoxParams(rxp)
+use atoms; use rxmd_params; use parameters
 !----------------------------------------------------------------
 implicit none
+
+type(rxmd_param_type),intent(in) :: rxp
 
 !--- get volume 
 MDBOX = &
@@ -638,15 +608,15 @@ HH(3,1,0)*(HH(1,2,0)*HH(2,3,0) - HH(2,2,0)*HH(1,3,0))
 call matinv(HH,HHi)
 
 !--- local box dimensions (a temporary use of lbox)
-LBOX(1)=lata/vprocs(1)
-LBOX(2)=latb/vprocs(2)
-LBOX(3)=latc/vprocs(3)
+LBOX(1)=lata/rxp%vprocs(1)
+LBOX(2)=latb/rxp%vprocs(2)
+LBOX(3)=latc/rxp%vprocs(3)
 
 !--- get the number of linkedlist cell per domain
 cc(1:3)=int(LBOX(1:3)/maxrc)
 
 !--- local system size in the unscaled coordinate.
-LBOX(1:3) = 1.d0/vprocs(1:3)
+LBOX(1:3) = 1.d0/rxp%vprocs(1:3)
 
 !--- get the linkedlist cell dimensions (normalized)
 lcsize(1:3) = LBOX(1:3)/cc(1:3)

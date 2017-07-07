@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
-subroutine QEq(ffp, atype, pos, q)
-use atoms; use parameters
+subroutine QEq(ffp, rxp, atype, pos, q)
+use atoms; use rxmd_params; use parameters
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -13,6 +13,7 @@ use atoms; use parameters
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
+type(rxmd_param_type),intent(in) :: rxp
 
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: q(NBUFFER)
@@ -34,7 +35,7 @@ QCopyDr(1:3)=ffp%rctap/(/lata,latb,latc/)
 
 !--- Initialize <s> vector with current charge and <t> vector with zero.
 !--- isQEq==1 Normal QEq, isQEq==2 Extended Lagrangian method, DEFAULT skip QEq 
-select case(isQEq)
+select case(rxp%isQEq)
 
 !=== original QEq ===!
   case (1) 
@@ -46,12 +47,12 @@ select case(isQEq)
     qs(:)=0.d0
     qt(:)=0.d0
     qs(1:NATOMS)=q(1:NATOMS)
-    nmax=NMAXQEq
+    nmax=rxp%NMAXQEq
 
 !=== Extended Lagrangian method ===!
   case(2)
 !--- charge mixing.
-    qs(1:NATOMS)=Lex_fqs*qsfp(1:NATOMS)+(1.d0-Lex_fqs)*q(1:NATOMS)
+    qs(1:NATOMS)=rxp%Lex_fqs*qsfp(1:NATOMS)+(1.d0-rxp%Lex_fqs)*q(1:NATOMS)
 !--- the same as the original QEq, set t vector zero
     qt(1:NATOMS)=0.d0
 !--- just run one step
@@ -110,8 +111,8 @@ do nstep_qeq=0, nmax-1
   if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
 #endif
 
-  if( ( 0.5d0*( abs(GEst2) + abs(GEst1) ) < QEq_tol) ) exit 
-  if( abs(GEst2) > 0.d0 .and. (abs(GEst1/GEst2-1.d0) < QEq_tol) ) exit
+  if( ( 0.5d0*( abs(GEst2) + abs(GEst1) ) < rxp%QEq_tol) ) exit 
+  if( abs(GEst2) > 0.d0 .and. (abs(GEst1/GEst2-1.d0) < rxp%QEq_tol) ) exit
   GEst2 = GEst1
 
 !--- line minimization factor of <s> vector
@@ -252,9 +253,9 @@ enddo; enddo; enddo
 !$omp end parallel do
 
 !--- for array size stat
-if(mod(nstep,pstep)==0) then
+if(mod(nstep,rxp%pstep)==0) then
   nn=maxval(nbplist(1:NATOMS,0))
-  i=nstep/pstep+1
+  i=nstep/rxp%pstep+1
   maxas(i,3)=nn
 endif
 

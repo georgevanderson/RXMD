@@ -4,19 +4,21 @@ $(EXE): $(OBJS)
 	$(FC) -o $(EXE) $(LDFLAGS) $(OBJS) module.o
 	mv $(EXE) ../$(EXE)
 
-$(OBJS) : base.mod
+#$(OBJS) : base.mod
 
-base.mod: module.F90
-	$(FC) -c $(CPP) $(OPT) module.F90
+#base.mod: module.F90
+#	$(FC) -c $(CPP) $(OPT) module.F90
 
-main.F90 : cg.o
+main.F90 : module.o cg.o
 
-bo.o : param.o
-fileio.o : param.o
-init.o : param.o
-pot.o : param.o
-qeq.o : param.o
-stress.o : param.o
+bo.o : module.o
+fileio.o : module.o
+init.o : param.o module.o
+pot.o : param.o module.o 
+qeq.o : module.o
+stress.o : module.o
+cg.o : module.o
+comm.o : module.o
 
 clean:
 	rm -f PI* *.o *.mod *.MOD mpif.h ../rxmd

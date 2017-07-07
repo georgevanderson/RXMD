@@ -23,9 +23,15 @@ real(8),parameter :: CG_EPS= 1d-16 ! a check to emit warning message
 contains
 
 !---------------------------------------------------------------------------------
-subroutine ConjugateGradient(atype,pos)
+subroutine ConjugateGradient(atype, pos, cla, ftol)
+use cmdline_args
 !---------------------------------------------------------------------------------
 implicit none
+
+type(cmdline_arg_type),intent(in) :: cla
+
+real(8) :: ftol
+
 real(8) :: atype(NBUFFER),pos(NBUFFER,3)
 real(8) :: f(NBUFFER,3),v(NBUFFER,3),q(NBUFFER)
 
@@ -63,7 +69,7 @@ do cgLoop = 0, CG_MaxMinLoop-1
    call QEq(atype, pos, q)
    call FORCE(atype, pos, gnew, q)
 
-   call OUTPUT(atype, pos, v, q, GetFileNameBase(cgLoop))
+   call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
 
    GPEold=GPEnew
    PE(0)=sum(PE(1:13))
@@ -73,7 +79,7 @@ do cgLoop = 0, CG_MaxMinLoop-1
    if(abs(GPEnew-GPEold)<=CG_tol*GNATOMS) then
       if(myid==0) print'(a30,i6)','Energy converged.', cgLoop
 
-      call OUTPUT(atype, pos, v, q, GetFileNameBase(cgLoop))
+      call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
       exit
    endif
 
