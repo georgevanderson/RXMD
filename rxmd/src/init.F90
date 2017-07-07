@@ -17,10 +17,10 @@ integer(8) :: i8
 real(8) :: rcsize(3), maxrcell
 
 Interface
-   subroutine ReadBIN(atype, pos, v, q, f, fileName)
+   subroutine ReadBIN(avs, fileName)
+      use base
+      type(atom_vars),intent(out) :: avs
       character(*),intent(in) :: fileName
-      real(8),allocatable,dimension(:) :: atype,q
-      real(8),allocatable,dimension(:,:) :: pos,v,f
    end subroutine
 end interface
 
@@ -101,18 +101,12 @@ call allocatord2d(avs%f,1,NBUFFER,1,3)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(avs%atype, avs%pos, avs%v, avs%q, avs%f, trim(cla%dataDir)//"/rxff.bin")
+call ReadBIN(avs, trim(cla%dataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
 call allocatord1d(qtfv,1,NBUFFER)
 qtfp(:)=0.d0; qtfv(:)=0.d0
-
-!call GetBoxParams(mat,lata,latb,latc,lalpha,lbeta,lgamma)
-!do i=1, 3
-!do j=1, 3
-!   HH(i,j,0)=mat(i,j)
-!enddo; enddo
 
 !--- get total number of atoms per type. This will be used to determine
 !--- subroutine cutofflength() 

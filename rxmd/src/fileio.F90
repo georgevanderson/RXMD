@@ -9,6 +9,7 @@ type(forcefield_params),intent(in) :: ffp
 type(rxmd_param_type),intent(in) :: rxp
 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
+print*,rxp%isBinary, rxp%isBondFile, rxp%isPDB
 
 if(rxp%isBinary) then
   call WriteBIN(avs, rxp, fileNameBase)
@@ -244,14 +245,13 @@ end subroutine
 end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
-subroutine ReadBIN(atype, rreal, v, q, f, fileName)
-use atoms; use MemoryAllocator
+subroutine ReadBIN(avs, fileName)
+use base; use atoms; use MemoryAllocator
 !--------------------------------------------------------------------------
 implicit none
 
 character(*),intent(in) :: fileName
-real(8),allocatable,dimension(:) :: atype,q
-real(8),allocatable,dimension(:,:) :: rreal,v,f
+type(atom_vars),intent(out) :: avs 
 
 integer :: i,i1
 
@@ -319,21 +319,21 @@ call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 allocate(dbuf(10*NATOMS))
 call MPI_File_Read(fh,dbuf,10*NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
-if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
-if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
-if(.not.allocated(rreal)) call allocatord2d(rreal,1,NBUFFER,1,3)
-if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
-if(.not.allocated(f)) call allocatord2d(f,1,NBUFFER,1,3)
+if(.not.allocated(avs%atype)) call allocatord1d(avs%atype,1,NBUFFER)
+if(.not.allocated(avs%q)) call allocatord1d(avs%q,1,NBUFFER)
+if(.not.allocated(avs%pos)) call allocatord2d(avs%pos,1,NBUFFER,1,3)
+if(.not.allocated(avs%v)) call allocatord2d(avs%v,1,NBUFFER,1,3)
+if(.not.allocated(avs%f)) call allocatord2d(avs%f,1,NBUFFER,1,3)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
 if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
-f(:,:)=0.0
+avs%f(:,:)=0.0
 
 do i=1, NATOMS
     i1=10*(i-1)
     rnorm(i,1:3)=dbuf(i1+1:i1+3)
-    v(i,1:3)=dbuf(i1+4:i1+6)
-    q(i)=dbuf(i1+7)
-    atype(i)=dbuf(i1+8)
+    avs%v(i,1:3)=dbuf(i1+4:i1+6)
+    avs%q(i)=dbuf(i1+7)
+    avs%atype(i)=dbuf(i1+8)
     qsfp(i)=dbuf(i1+9)
     qsfv(i)=dbuf(i1+10)
 enddo
@@ -349,7 +349,7 @@ do j=1, 3
 enddo; enddo
 call UpdateBoxParams()
 
-call xs2xu(rnorm,rreal,NATOMS)
+call xs2xu(rnorm,avs%pos,NATOMS)
 
 call system_clock(tj,tk)
 it_timer(22)=it_timer(22)+(tj-ti)
@@ -379,7 +379,7 @@ integer,allocatable :: ldata(:),gdata(:)
 real(8) :: ddata(6)
 real(8),allocatable :: dbuf(:)
 
-real(8) :: rnorm(3,NBUFFER)
+real(8) :: rnorm(NBUFFER,3)
 
 integer :: ti,tj,tk
 call system_clock(ti,tk)
