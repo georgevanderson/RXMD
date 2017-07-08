@@ -23,12 +23,13 @@ real(8),parameter :: CG_EPS= 1d-16 ! a check to emit warning message
 contains
 
 !---------------------------------------------------------------------------------
-subroutine ConjugateGradient(atype, pos, cla, ftol)
-use cmdline_args
+subroutine ConjugateGradient(atype, pos, cla, mpt, ftol)
+use cmdline_args; use mpi_vars
 !---------------------------------------------------------------------------------
 implicit none
 
 type(cmdline_arg_type),intent(in) :: cla
+type(mpi_var_type),intent(in) :: mpt
 
 real(8) :: ftol
 
@@ -46,7 +47,7 @@ integer :: cgLoop, i
 CG_tol = ftol
 v(:,:)=0.d0
 
-if(myid==0) print'(a40,1x,es10.2)', NEW_LINE('A')//'Start structural optimization.', ftol
+if(mpt%myid==0) print'(a40,1x,es10.2)', NEW_LINE('A')//'Start structural optimization.', ftol
 
 call QEq(atype, pos, q)
 call FORCE(atype, pos, gnew, q)
@@ -59,11 +60,11 @@ call MPI_ALLREDUCE(PE, GPE, size(PE), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WO
 GPEnew=GPE(0)
 
 !--- if no bracket range was found here, you are at the energy minimum already. 
-call BracketSearchRange(atype,pos,p,stepl)
+call BracketSearchRange(mpt%myid,atype,pos,p,stepl)
 
 do cgLoop = 0, CG_MaxMinLoop-1
 
-   call LineMinimization(atype,pos,p,gnew,stepl)
+   call LineMinimization(mpt%myid,atype,pos,p,gnew,stepl)
    gold(1:NATOMS,1:3)=gnew(1:NATOMS,1:3)
 
    call QEq(atype, pos, q)
@@ -77,7 +78,7 @@ do cgLoop = 0, CG_MaxMinLoop-1
    GPEnew=GPE(0)
 
    if(abs(GPEnew-GPEold)<=CG_tol*GNATOMS) then
-      if(myid==0) print'(a30,i6)','Energy converged.', cgLoop
+      if(mpt%myid==0) print'(a30,i6)','Energy converged.', cgLoop
 
       call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
       exit
@@ -87,12 +88,12 @@ do cgLoop = 0, CG_MaxMinLoop-1
    beta2=DotProductVec3D(gnew,gnew,NATOMS)
    beta3=DotProductVec3D(gnew,gold,NATOMS)
 
-   if(myid==0) print'(a30,i6,4es15.5,2es20.10)', &
+   if(mpt%myid==0) print'(a30,i6,4es15.5,2es20.10)', &
      'b1,b2,b3,(b2-b3)/b1: ',cgLoop,beta1,beta2,beta3,(beta2-beta3)/beta1,GPEnew,GPEold
 
    p(1:NATOMS,1:3) = (beta2-beta3)/beta1*p(1:NATOMS,1:3) + gnew(1:NATOMS,1:3)
 
-   call BracketSearchRange(atype,pos,p,stepl)
+   call BracketSearchRange(mpt%myid,atype,pos,p,stepl)
 
 enddo 
 
@@ -102,11 +103,12 @@ stop 'successfully finished structural optimization. '
 end subroutine ConjugateGradient
 
 !---------------------------------------------------------------------------------
-subroutine BracketSearchRange(atype,pos,p,stepl) 
+subroutine BracketSearchRange(myid,atype,pos,p,stepl) 
 ! input: atom type, initial coordinate, and search direction.
 ! output: step length to bracket an energy minimum along the search direction.
 !---------------------------------------------------------------------------------
 implicit none
+integer,intent(in) :: myid
 real(8),intent(in) :: atype(NBUFFER),pos(NBUFFER,3),p(NBUFFER,3)
 real(8),intent(out) :: stepl
 real(8) :: vdummy(NBUFFER,3), qdummy(NBUFFER)
@@ -146,6 +148,7 @@ end subroutine BracketSearchRange
 
 !---------------------------------------------------------------------------------
 subroutine WolfeConditions(atype,pos,p,stepl,isLowerEnergy,isArmijoRule,isCurvature)
+use mpi_vars
 ! input: atom type, position, search direction and step length
 ! output: two bools for the Wolfe conditions
 ! TODO: This function is very similar to EvaluateEnergyWithStep because the function 
@@ -210,7 +213,7 @@ NATOMS = NATOMSTmp
 end subroutine WolfeConditions
 
 !---------------------------------------------------------------------------------
-subroutine LineMinimization(atype,pos,p,g,stepl)
+subroutine LineMinimization(myid, atype,pos,p,g,stepl)
 ! Here, we perform line minimization based on golden section search. After obtaining,
 ! step length, update atom positions and migrate them if they move out of MD box. 
 ! We also migrate gradient and search vectors according to the position migration 
@@ -219,6 +222,7 @@ subroutine LineMinimization(atype,pos,p,g,stepl)
 ! output: updated coordinate and associated gradient vector. 
 !---------------------------------------------------------------------------------
 implicit none
+integer,intent(in) :: myid 
 real(8) :: atype(NBUFFER),pos(NBUFFER,3),g(NBUFFER,3),p(NBUFFER,3),q(NBUFFER)
 real(8) :: atypeTmp(NBUFFER),posTmp(NBUFFER,3),fdummy(1,1)
 integer :: lineMinLoop, NATOMSTmp
@@ -228,7 +232,7 @@ if(myid==0) print'(a40)', NEW_LINE('A')//'Start LineMinimization()'
 
 step0=0.d0
 
-call GoldenSectionSearch(atype,pos,p,step0,stepl)
+call GoldenSectionSearch(myid, atype,pos,p,step0,stepl)
 
 ! First, migrate gradient vector g.
 NATOMStmp = MigrateVec3D(pos,p,g,stepl)
@@ -241,10 +245,11 @@ return
 end subroutine LineMinimization
 
 !---------------------------------------------------------------------------------
-subroutine GoldenSectionSearch(atype,pos,p,ax,dx)
+subroutine GoldenSectionSearch(myid, atype,pos,p,ax,dx)
 ! ax,dx: left and right boundaries of search range. 
 !---------------------------------------------------------------------------------
 implicit none
+integer,intent(in) :: myid
 real(8),intent(in) :: atype(NBUFFER),pos(NBUFFER,3),p(NBUFFER,3)
 real(8) :: ax,bx,cx,dx,PEbx,PEcx
 real(8) :: ratio = 1.d0/1.61803398875d0 ! inverse of golden ratio
@@ -318,6 +323,7 @@ end function MigrateVec3D
 
 !---------------------------------------------------------------------------------
 function DotProductVec3D(v1, v2, Nelems) result (ret)
+use mpi_vars 
 !---------------------------------------------------------------------------------
 implicit none
 integer,intent(in) :: Nelems
@@ -337,12 +343,12 @@ end function DotProductVec3D
 
 
 !---------------------------------------------------------------------------------
-subroutine NormalizeVec3D(v, vnorm) 
+subroutine NormalizeVec3D(v, vnorm, myid) 
 !---------------------------------------------------------------------------------
 implicit none
 real(8) :: v(NBUFFER,3)
 real(8) :: vsum, vnorm 
-integer :: i
+integer :: i, myid
 
 vnorm=sqrt(DotProductVec3D(v,v,NATOMS))
 

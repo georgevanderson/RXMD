@@ -1,13 +1,15 @@
 !----------------------------------------------------------------------------------------------------------------------
-subroutine FORCE(ffp, atype, pos, f, q)
-use parameters; use atoms 
+subroutine FORCE(ffp, mpt, atype, pos, f, q)
+use base; use mpi_vars; use parameters; use atoms 
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
-type(forcefield_params) :: ffp
+type(forcefield_params),intent(in) :: ffp
+type(mpi_var_type),intent(in) :: mpt
+type(atom_vars) :: avs 
 
-real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: pos(NBUFFER,3)
+real(8),intent(inout) :: atype(NBUFFER), q(NBUFFER)
+real(8),intent(inout) :: pos(NBUFFER,3)
 real(8),intent(inout) :: f(NBUFFER,3)
 
 real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array dimension matches
@@ -28,8 +30,16 @@ PE(:) = 0.d0
 astr(:,:) = 0.d0
 #endif
 
+!!!FIXME
+avs%pos=pos
+avs%atype=atype
+avs%q=q
 !--- cache atoms and create linkedlist for bonding and non-bonding neighbor lists. 
-call COPYATOMS(MODE_COPY,NMINCELL*lcsize(1:3),atype,pos,vdummy,f,q) 
+call COPYATOMS(avs, mpt, MODE_COPY, NMINCELL*lcsize(1:3))
+pos=avs%pos
+atype=avs%atype
+q=avs%q
+!!!FIXME
 
 call LINKEDLIST(atype, pos, lcsize, header, llist, nacell, cc, MAXLAYERS)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
@@ -58,7 +68,14 @@ CALL E4b()
 !$omp end parallel 
 
 CALL ForceBondedTerms(NMINCELL)
-CALL COPYATOMS(MODE_CPBK,[0.d0, 0.d0, 0.d0], atype, pos, vdummy, f, q) 
+
+!!! FIXME
+avs%pos=pos
+avs%atype=atype
+avs%f=f
+CALL COPYATOMS(avs, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
+f=avs%f
+!!! FIXME
 
 #ifdef RFDUMP
 open(81,file="rfdump"//trim(rankToString(myid))//".txt")

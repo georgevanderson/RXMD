@@ -1,6 +1,7 @@
 !------------------------------------------------------------------------------
 program rxmd
-use base; use atoms; use rxmd_params; use cmdline_args; use parameters; use CG
+use base; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
+use parameters; use CG
 !------------------------------------------------------------------------------
 implicit none
 integer :: i,it1,it2,irt,provided
@@ -10,26 +11,25 @@ type(forcefield_params) :: ffp
 type(atom_vars) :: avs
 type(rxmd_param_type) :: rxp
 type(cmdline_arg_type) :: cla
+type(mpi_var_type) :: mpt
 
-!call MPI_INIT(ierr)
-call MPI_INIT_THREAD(MPI_THREAD_SERIALIZED,provided,ierr)
-call MPI_COMM_RANK(MPI_COMM_WORLD, myid, ierr)
-call MPI_COMM_SIZE(MPI_COMM_WORLD, nprocs, ierr)
-
-if(myid==0)  print'(a30)', 'rxmd has started'
+!if(mpt%myid==0)  print'(a30)', 'rxmd has started'
+print'(a30)', 'rxmd has started'
 
 call GetCmdLineArgs(cla)
+
+call GetMPIVariables(mpt)
 
 !--- read ffield file
 CALL GETPARAMS(ffp, cla%FFPath, FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(ffp, avs, rxp, cla)
+CALL INITSYSTEM(ffp, avs, rxp, cla, mpt)
 
-if(rxp%mdmode==10) call ConjugateGradient(avs%atype, avs%pos, cla, rxp%ftol)
+if(rxp%mdmode==10) call ConjugateGradient(avs%atype, avs%pos, cla, mpt, rxp%ftol)
 
-call QEq(ffp, rxp, avs%atype, avs%pos, avs%q)
-call FORCE(ffp, avs%atype, avs%pos, avs%f, avs%q)
+call QEq(ffp, avs, mpt, rxp)
+call FORCE(ffp, mpt, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
@@ -37,7 +37,7 @@ call system_clock(it1,irt)
 do nstep=0, rxp%ntime_step-1
 
    if(mod(nstep, rxp%pstep)==0) then
-       call PRINTE(rxp%pstep, avs%atype, avs%v, avs%q)
+       call PRINTE(mpt, rxp%pstep, avs%atype, avs%v, avs%q)
        if(cla%saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
    if(mod(nstep, rxp%fstep)==0) &
@@ -56,7 +56,7 @@ do nstep=0, rxp%ntime_step-1
 
 !--- correct the c.o.m motion
    if(mod(nstep,rxp%sstep)==0.and.rxp%mdmode==7) &
-      call ScaleTemperature(ffp, rxp%treq, avs%atype, avs%v)
+      call ScaleTemperature(ffp, mpt, rxp%treq, avs%atype, avs%v)
 
 !--- update velocity
    call vkick(1.d0, avs%atype, avs%v, avs%f) 
@@ -70,10 +70,10 @@ do nstep=0, rxp%ntime_step-1
    avs%pos(1:NATOMS,1:3) = avs%pos(1:NATOMS,1:3) + rxp%dt * avs%v(1:NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
-   call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],avs%atype, avs%pos, avs%v, avs%f, avs%q, rxp%pstep)
+   call COPYATOMS(avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
    
-   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, rxp, avs%atype, avs%pos, avs%q)
-   call FORCE(ffp, avs%atype, avs%pos, avs%f, avs%q)
+   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp)
+   call FORCE(ffp, mpt, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- update velocity
    call vkick(1.d0, avs%atype, avs%v, avs%f) 
@@ -87,12 +87,12 @@ enddo
 call OUTPUT(ffp, avs, rxp, GetFileNameBase(cla%dataDir, current_step+nstep))
 
 !--- update rxff.bin in working directory for continuation run
-if(rxp%isBinary) call WriteBIN(avs, rxp, GetFileNameBase(cla%dataDir, -1))
+if(rxp%isBinary) call WriteBIN(avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
 
 call system_clock(it2,irt)
 it_timer(Ntimer)=(it2-it1)
 
-call FinalizeMD(cla%saveRunProfile, irt)
+call FinalizeMD(mpt%myid, cla%saveRunProfile, irt)
 
 call MPI_FINALIZE(ierr)
 end PROGRAM
@@ -122,11 +122,12 @@ write(fd,*)
 end subroutine
 
 !------------------------------------------------------------------------------
-subroutine FinalizeMD(saveRunProfile, irt)
-use atoms; use MemoryAllocator
+subroutine FinalizeMD(myid, saveRunProfile, irt)
+use atoms; use MemoryAllocator; use mpi_vars
 !------------------------------------------------------------------------------
 implicit none
 
+integer,intent(in) :: myid
 logical,intent(in) :: saveRunProfile
 integer,intent(in) :: irt ! time resolution
 integer,allocatable :: ibuf(:),ibuf1(:)
@@ -141,7 +142,7 @@ ibuf(:)=0
 do i=1,nmaxas
    ibuf(i)=maxval(maxas(:,i))
 enddo
-call MPI_ALLREDUCE (ibuf, ibuf1, nmaxas, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(ibuf, ibuf1, nmaxas, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
 
 call MPI_ALLREDUCE(it_timer, it_timer_max, Ntimer, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
 call MPI_ALLREDUCE(it_timer, it_timer_min, Ntimer, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, ierr)
@@ -218,12 +219,13 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------------------------------
-subroutine PRINTE(pstep, atype, v, q)
-use atoms; use parameters; use MemoryAllocator
+subroutine PRINTE(mpt, pstep, atype, v, q)
+use atoms; use parameters; use MemoryAllocator; use mpi_vars
 ! calculate the kinetic energy and sum up all of potential energies, then print them.
 !----------------------------------------------------------------------------------------
 implicit none
 
+type(mpi_var_type) :: mpt
 integer,intent(in) :: pstep
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(in) :: v(NBUFFER,3)
@@ -253,7 +255,7 @@ PE(0)=sum(PE(1:13))
 !--- copy data into buffer
 buf(0:13) = PE(0:13)
 buf(14) = KE; buf(15) = ss; buf(16) = qq
-call MPI_ALLREDUCE (buf, Gbuf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE (buf, Gbuf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, mpt%mycomm, ierr)
 
 !--- copy data from buffer
 GPE(0:13) = Gbuf(0:13)
@@ -269,7 +271,7 @@ ss=ss/3.d0/MDBOX*USTRS
 
 !--- total energy
 GTE = GKE + GPE(0)
-if(myid==0) then
+if(mpt%myid==0) then
    
    cstep = nstep + current_step 
 
@@ -409,8 +411,13 @@ do i=1, copyptr(6)
          endif
       enddo
       if(.not.isFound) &
-      print'(a,i6,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
-           myid, i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
+
+      !print'(a,i6,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
+      !     myid, i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
+      !! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
+      ! how do we print myid without passing mpi_var_type? 
+      print'(a,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
+           i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
    enddo
 enddo
 !$omp end parallel do
@@ -418,13 +425,16 @@ enddo
 !--- error trap
 n=maxval(nbrlist(1:NATOMS,0))
 if(n > MAXNEIGHBS) then
-   write(6,'(a45,2i5)') "ERROR: overflow of max # in neighbor list, ", myid, n
+   !! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
+   ! how do we print myid without passing mpi_var_type? 
+   !write(6,'(a45,2i5)') "ERROR: overflow of max # in neighbor list, ", myid, n
+   write(6,'(a45,i5)') "ERROR: overflow of max # in neighbor list, ", n
    call MPI_FINALIZE(ierr)
    stop
 endif
 
-!!FIXME
-!! disable array size statistics for now. 
+!! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
+! how do we print myid without passing mpi_var_type? 
 !!--- for array size stat
 !if(mod(nstep,rxp%pstep)==0) then
 !  maxas(nstep/pstep+1,2)=maxval(nbrlist(1:NATOMS,0))
@@ -498,7 +508,7 @@ end subroutine
 
 !----------------------------------------------------------------------
 subroutine angular_momentum(mass, atype, pos, v)
-use atoms; use parameters
+use atoms; use parameters; use mpi_vars
 !----------------------------------------------------------------------
 implicit none
 
@@ -652,12 +662,13 @@ enddo
 end subroutine
 
 !-----------------------------------------------------------------------
-subroutine ScaleTemperature(ffp, treq, atype, v)
-use atoms; use parameters
+subroutine ScaleTemperature(ffp, mpt, treq, atype, v)
+use atoms; use parameters; use mpi_vars
 !-----------------------------------------------------------------------
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
+type(mpi_var_type),intent(in) :: mpt
 real(8),intent(in) :: treq
 
 real(8) :: atype(NBUFFER), v(NBUFFER,3)
@@ -672,17 +683,18 @@ do i=1, NATOMS
    v(i,1:3)=sqrt(ctmp)*v(i,1:3)
 enddo
 
-call LinearMomentum(ffp, atype, v)
+call LinearMomentum(ffp, mpt, atype, v)
 
 return
 end
 
 !-----------------------------------------------------------------------
-subroutine LinearMomentum(ffp, atype, v)
-use atoms; use parameters
+subroutine LinearMomentum(ffp, mpt, atype, v)
+use atoms; use parameters; use mpi_vars
 !-----------------------------------------------------------------------
 implicit none
 
+type(mpi_var_type),intent(in) :: mpt
 type(forcefield_params),intent(in) :: ffp
 real(8) :: atype(NBUFFER), v(NBUFFER,3)
 
@@ -698,7 +710,7 @@ do i=1, NATOMS
 enddo
 
 sbuf(1)=mm; sbuf(2:4)=vCM(1:3)
-call MPI_ALLREDUCE (sbuf, rbuf, size(sbuf), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(sbuf, rbuf, size(sbuf), MPI_DOUBLE_PRECISION, MPI_SUM, mpt%mycomm, ierr)
 mm=rbuf(1); vCM(1:3)=rbuf(2:4)
 
 !--- get the global momentum

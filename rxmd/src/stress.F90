@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------------------
 subroutine stress(mass, atype, pos, v, f)
-use atoms; use parameters
+use atoms; use parameters; use mpi_vars
 ! calculate stress tensor components of kinetic energy part. 
 !--------------------------------------------------------------------------------------------------------------
 implicit none

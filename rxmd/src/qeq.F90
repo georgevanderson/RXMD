@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
-subroutine QEq(ffp, rxp, atype, pos, q)
-use atoms; use rxmd_params; use parameters
+subroutine QEq(ffp, avs, mpt, rxp)
+use base; use atoms; use rxmd_params; use mpi_vars; use parameters; use mpi_vars
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -13,11 +13,9 @@ use atoms; use rxmd_params; use parameters
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
+type(atom_vars),intent(inout) ::avs 
 type(rxmd_param_type),intent(in) :: rxp
-
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: q(NBUFFER)
-real(8) :: vdummy(1,1), fdummy(1,1)
+type(mpi_var_type),intent(in) :: mpt
 
 integer :: i,j,l2g
 integer :: i1,j1,k1, nmax
@@ -41,18 +39,18 @@ select case(rxp%isQEq)
   case (1) 
 !--- In the original QEq, fictitious charges are initialized with real charges
 !--- and set zero.
-    qsfp(1:NATOMS)=q(1:NATOMS)
+    qsfp(1:NATOMS)=avs%q(1:NATOMS)
     qsfv(1:NATOMS)=0.d0
 !--- Initialization of the two vector QEq 
     qs(:)=0.d0
     qt(:)=0.d0
-    qs(1:NATOMS)=q(1:NATOMS)
+    qs(1:NATOMS)=avs%q(1:NATOMS)
     nmax=rxp%NMAXQEq
 
 !=== Extended Lagrangian method ===!
   case(2)
 !--- charge mixing.
-    qs(1:NATOMS)=rxp%Lex_fqs*qsfp(1:NATOMS)+(1.d0-rxp%Lex_fqs)*q(1:NATOMS)
+    qs(1:NATOMS)=rxp%Lex_fqs*qsfp(1:NATOMS)+(1.d0-rxp%Lex_fqs)*avs%q(1:NATOMS)
 !--- the same as the original QEq, set t vector zero
     qt(1:NATOMS)=0.d0
 !--- just run one step
@@ -69,8 +67,8 @@ open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-call COPYATOMS(MODE_COPY, QCopyDr, atype, pos, vdummy, fdummy, q)
-call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
+call COPYATOMS(avs, mpt, MODE_COPY, QCopyDr)
+call LINKEDLIST(avs%atype, avs%pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
 
@@ -85,14 +83,14 @@ enddo
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS(avs, mpt, MODE_QCOPY1, QCopyDr)
 call get_gradient(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
 hs(1:NATOMS) = gs(1:NATOMS)
 ht(1:NATOMS) = gt(1:NATOMS)
 
-call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS(avs, mpt, MODE_QCOPY2, QCopyDr)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -148,10 +146,10 @@ do nstep_qeq=0, nmax-1
   mu = ssum/tsum
 
 !--- update atom charges
-  q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
+  avs%q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(avs, mpt, MODE_QCOPY1, QCopyDr)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -162,7 +160,7 @@ do nstep_qeq=0, nmax-1
   ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
 
 !--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(avs, mpt, MODE_QCOPY2, QCopyDr)
 
 enddo
 
@@ -209,7 +207,7 @@ do c3=0, nbcc(3)-1
    i = nbheader(c1,c2,c3)
    do m = 1, nbnacell(c1,c2,c3)
 
-   ity=nint(atype(i))
+   ity=nint(avs%atype(i))
 
    do mn = 1, nbnmesh
       c4 = c1 + nbmesh(1,mn)
@@ -220,12 +218,12 @@ do c3=0, nbcc(3)-1
       do n=1, nbnacell(c4,c5,c6)
 
          if(i/=j) then
-            dr(1:3) = pos(i,1:3) - pos(j,1:3)
+            dr(1:3) = avs%pos(i,1:3) - avs%pos(j,1:3)
             dr2 =  sum(dr(1:3)*dr(1:3))
 
             if(dr2 < ffp%rctap2) then
 
-               jty = nint(atype(j))
+               jty = nint(avs%atype(j))
 
 !--- make a neighbor list with cutoff length = 10[A]
 !$omp atomic
@@ -280,20 +278,20 @@ call system_clock(ti,tk)
 Est = 0.d0
 !$omp parallel do default(shared), schedule(runtime), private(i,j,j1,ity,eta_ity,Est1),reduction(+:Est)
 do i=1, NATOMS
-   ity = nint(atype(i))
+   ity = nint(avs%atype(i))
    eta_ity = ffp%eta(ity)
 
    hshs(i) = eta_ity*hs(i)
    hsht(i) = eta_ity*ht(i)
 
-   Est = Est + ffp%chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
+   Est = Est + ffp%chi(ity)*avs%q(i) + 0.5d0*eta_ity*avs%q(i)*avs%q(i)
 
    do j1 = 1, nbplist(i,0)
       j = nbplist(i,j1)
       hshs(i) = hshs(i) + hessian(j1,i)*hs(j)
       hsht(i) = hsht(i) + hessian(j1,i)*ht(j)
 !--- get half of potential energy, then sum it up if atoms are resident.
-      Est1 = 0.5d0*hessian(j1,i)*q(i)*q(j)
+      Est1 = 0.5d0*hessian(j1,i)*avs%q(i)*avs%q(j)
       Est = Est + Est1
       if(j<=NATOMS) Est = Est + Est1
    enddo
@@ -332,7 +330,7 @@ do i=1,NATOMS
       gtsum = gtsum + hessian(j1,i)*qt(j)
    enddo
 
-   ity = nint(atype(i))
+   ity = nint(avs%atype(i))
    eta_ity = ffp%eta(ity)
 
    gs(i) = - ffp%chi(ity) - eta_ity*qs(i) - gssum

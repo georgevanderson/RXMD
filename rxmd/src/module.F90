@@ -11,6 +11,37 @@ end module
 !-------------------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------------------
+module mpi_vars
+!-------------------------------------------------------------------------------------------
+include 'mpif.h'
+
+type mpi_var_type
+   integer :: myid, nprocs, mycomm
+   integer :: provided
+   integer :: ierr
+end type mpi_var_type
+
+contains
+
+subroutine GetMPIVariables(mpt)
+   implicit none
+
+   type(mpi_var_type) ::mpt
+
+   mpt%mycomm = MPI_COMM_WORLD
+
+   call MPI_INIT(mpt%ierr)
+   !call MPI_INIT_THREAD(MPI_THREAD_SERIALIZED,mpt%provided,ierr)
+   call MPI_COMM_RANK(mpt%mycomm, mpt%myid, mpt%ierr)
+   call MPI_COMM_SIZE(mpt%mycomm, mpt%nprocs, mpt%ierr)
+
+end subroutine GetMPIVariables
+
+end module mpi_vars
+
+!-------------------------------------------------------------------------------------------
+
+!-------------------------------------------------------------------------------------------
 module cmdline_args
 !-------------------------------------------------------------------------------------------
 
@@ -146,7 +177,6 @@ end module rxmd_params
 !-------------------------------------------------------------------------------------------
 module atoms
 !-------------------------------------------------------------------------------------------
-include 'mpif.h'
 
 integer,parameter :: MAXPATHLENGTH=256
 
@@ -162,7 +192,7 @@ integer,allocatable :: maxas(:,:)
 !--- lattice parameters 
 real(8) :: lata,latb,latc,lalpha,lbeta,lgamma
 
-integer :: myid, nprocs, ierr, myparity(3), vID(3)
+integer :: ierr, myparity(3), vID(3)
 
 !<sbuffer> send buffer, <rbuffer> receive buffer
 real(8),allocatable :: sbuffer(:), rbuffer(:)

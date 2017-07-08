@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------------------
-subroutine COPYATOMS(imode, dr, atype, rreal, v, f, q)
-use atoms
+subroutine COPYATOMS(avs, mpt, imode, dr)
+use atoms; use base; use mpi_vars
 !
 ! TODO: update notes here
 !
@@ -30,10 +30,11 @@ implicit none
 
 integer,intent(IN) :: imode 
 real(8),intent(IN) :: dr(3)
-real(8) :: atype(NBUFFER), q(NBUFFER)
-real(8) :: rreal(NBUFFER,3),v(NBUFFER,3),f(NBUFFER,3)
 
-real(8) :: pos(NBUFFER,3) ! <- normalized coordinate
+type(atom_vars) :: avs
+type(mpi_var_type),intent(in) :: mpt
+
+real(8) :: rnorm(NBUFFER,3) ! <- normalized coordinate
 
 integer :: i,tn1,tn2, dflag
 integer :: ni, ity
@@ -48,7 +49,7 @@ call system_clock(tti,tk)
 !--- How many atom coords need to be normalized depends on who calls this.
 !--- For example function calls during QEq (MODE_QCOPY1 & MODE_QCOPY2) assume
 !--- atom information of the extended domain regions. 
-call xu2xs(rreal,pos,max(NATOMS,copyptr(6)))
+call xu2xs(avs%pos, rnorm, max(NATOMS,copyptr(6)))
 
 !--- clear total # of copied atoms, sent atoms, recieved atoms
 na=0;ns=0;nr=0
@@ -87,9 +88,9 @@ do dflag=1, 6
       i = (6-dflag)/2 + 1         ! <-[321]
    endif
 
-   call store_atoms(tn1, dflag, imode, dr)
-   call send_recv(tn1, tn2, myparity(i))
-   call append_atoms(dflag, imode)
+   call store_atoms(avs, mpt, tn1, dflag, imode, dr)
+   call send_recv(mpt, tn1, tn2, myparity(i))
+   call append_atoms(avs, mpt, dflag, imode)
 
 enddo
 
@@ -98,14 +99,14 @@ if(imode==MODE_MOVE) then
 !--- remove atoms which are transfered to neighbor nodes.
    ni=0
    do i=1, NATOMS + na/ne
-      ity = nint(atype(i))
+      ity = nint(avs%atype(i))
 !--- if atype is smaller than zero (this is done in store_atoms), ignore the atom.
       if(ity>0) then
         ni=ni+1
-        pos(ni,1:3) = pos(i,1:3)
-        v(ni,1:3) = v(i,1:3)
-        atype(ni) = atype(i)
-        q(ni) = q(i)
+        rnorm(ni,1:3) = rnorm(i,1:3)
+        avs%v(ni,1:3) = avs%v(i,1:3)
+        avs%atype(ni) = avs%atype(i)
+        avs%q(ni) = avs%q(i)
         qs(ni) = qs(i)
         qt(ni) = qt(i)
         qsfp(ni) = qsfp(i)
@@ -119,7 +120,7 @@ if(imode==MODE_MOVE) then
 endif
 
 !--- by here, we got new atom positions in the normalized coordinate, need to update real coordinates.
-if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(pos,rreal,copyptr(6))
+if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(rnorm,avs%pos,copyptr(6))
 
 !! FIXME
 ! disable the array size statistics since it requires rxmd_param_type%pstep deep inside this routine.
@@ -137,13 +138,15 @@ return
 CONTAINS 
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine send_recv(tn1, tn2, mypar)
-use atoms
+subroutine send_recv(mpt, tn1, tn2, mypar)
+use atoms; use mpi_vars
 ! shared variables::  <ns>, <nr>, <na>, <sbuffer()>, <rbuffer()>
 ! This subroutine only takes care of communication part. won't be affected by wether atom migration or atom 
 ! copy mode. 
 !--------------------------------------------------------------------------------------------------------------
 implicit none
+
+type(mpi_var_type),intent(in) :: mpt
 integer,intent(IN) ::tn1, tn2, mypar 
 integer :: recv_stat(MPI_STATUS_SIZE)
 real(8) :: recv_size
@@ -151,7 +154,7 @@ real(8) :: recv_size
 !--- if the traget node is the node itself, atoms informations are already copied 
 !--- to <rbuffer> in <store_atoms()>. Nothing to do here. Just return from this subroutine.
 
-if(myid==tn1) return 
+if(mpt%myid==tn1) return 
 
 call system_clock(ti,tk)
 
@@ -203,14 +206,18 @@ it_timer(25)=it_timer(25)+(tj-ti)
 end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine store_atoms(tn, dflag, imode, dr)
-use atoms
+subroutine store_atoms(avs, mpt, tn, dflag, imode, dr)
+use atoms; use base; use mpi_vars
 ! <nlayer> will be used as a flag to change the behavior of this subroutine. 
 !    <nlayer>==0 migration mode
 !            > 0 copy mode
 ! shared variables::  <ns>, <nr>, <na>, <ne>, <sbuffer()>, <rbuffer()>
 !--------------------------------------------------------------------------------------------------------------
 implicit none
+
+type(atom_vars) :: avs
+type(mpi_var_type) :: mpt
+
 integer,intent(IN) :: tn, dflag, imode 
 real(8),intent(IN) :: dr(3)
 
@@ -247,24 +254,24 @@ if(imode/=MODE_CPBK) then
 
         select case(imode)
         case(MODE_MOVE)
-           sbuffer(ns+1:ns+3) = pos(n,1:3)
+           sbuffer(ns+1:ns+3) = rnorm(n,1:3)
            sbuffer(ns+1+is) = sbuffer(ns+1+is) + sft
-           sbuffer(ns+4:ns+6) = v(n,1:3)
-           sbuffer(ns+7) = atype(n)
-           sbuffer(ns+8) = q(n)
+           sbuffer(ns+4:ns+6) = avs%v(n,1:3)
+           sbuffer(ns+7) = avs%atype(n)
+           sbuffer(ns+8) = avs%q(n)
            sbuffer(ns+9) = qs(n)
            sbuffer(ns+10) = qt(n)
            sbuffer(ns+11) = qsfp(n)
            sbuffer(ns+12) = qsfv(n)
   
 !--- In append_atoms subroutine, atoms with <atype>==-1 will be removed
-           atype(n) = -1.d0 
+           avs%atype(n) = -1.d0 
 
         case(MODE_COPY)
-           sbuffer(ns+1:ns+3) = pos(n,1:3)
+           sbuffer(ns+1:ns+3) = rnorm(n,1:3)
            sbuffer(ns+1+is) = sbuffer(ns+1+is) + sft
-           sbuffer(ns+4) = atype(n)
-           sbuffer(ns+5) = q(n)
+           sbuffer(ns+4) = avs%atype(n)
+           sbuffer(ns+5) = avs%q(n)
            sbuffer(ns+6) = dble(n)
            sbuffer(ns+7) = qs(n)
            sbuffer(ns+8) = qt(n)
@@ -278,7 +285,7 @@ if(imode/=MODE_CPBK) then
         case(MODE_QCOPY2)
            sbuffer(ns+1) = hs(n)
            sbuffer(ns+2) = ht(n)
-           sbuffer(ns+3) = q(n)
+           sbuffer(ns+3) = avs%q(n)
 
         case(MODE_STRESSCALC)
            sbuffer(ns+1:ns+6) = astr(1:6,n)
@@ -301,7 +308,7 @@ else if(imode==MODE_CPBK) then
 
    do n=copyptr(is-1)+1, copyptr(is)
       sbuffer(ns+1) = dble(frcindx(n))
-      sbuffer(ns+2:ns+4) = f(n,1:3)
+      sbuffer(ns+2:ns+4) = avs%f(n,1:3)
 #ifdef STRESS
       sbuffer(ns+5:ns+10) = astr(1:6,n)
 #endif
@@ -314,7 +321,7 @@ endif
 !--- if myid is the same of target-node ID, don't use MPI call.
 !--- Just copy <sbuffer> to <rbuffer>. Because <send_recv()> will not be used,
 !--- <nr> has to be updated here for <append_atoms()>.
-if(myid==tn) then
+if(mpt%myid==tn) then
    if(ns>0) then
       nr=ns
       call CheckSizeThenReallocate(rbuffer,nr)
@@ -330,12 +337,15 @@ it_timer(26)=it_timer(26)+(tj-ti)
 end subroutine store_atoms
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine append_atoms(dflag, imode)
-use atoms
+subroutine append_atoms(avs, mpt, dflag, imode)
+use atoms; use base; use mpi_vars
 ! <append_atoms> append copied information into arrays
 ! shared variables::  <ns>, <nr>, <na>, <ne>, <sbuffer()>, <rbuffer()>
 !--------------------------------------------------------------------------------------------------------------
 implicit none
+
+type(atom_vars) :: avs
+type(mpi_var_type),intent(in) :: mpt
 integer,intent(IN) :: dflag, imode 
 integer :: m, i, ine
 
@@ -343,7 +353,7 @@ call system_clock(ti,tk)
 
 if( (na+nr)/ne > NBUFFER) then
     print'(a,i4,5i8)', "ERROR: over capacity in append_atoms; myid,na,nr,ne,(na+nr)/ne,NBUFFER: ", &
-         myid,na,nr,ne,(na+nr)/ne, NBUFFER
+         mpt%myid,na,nr,ne,(na+nr)/ne, NBUFFER
     call MPI_FINALIZE(ierr)
     stop
 endif
@@ -361,19 +371,19 @@ if(imode /= MODE_CPBK) then
 
       select case(imode)
          case(MODE_MOVE)
-              pos(m,1:3) = rbuffer(ine+1:ine+3)
-              v(m,1:3) = rbuffer(ine+4:ine+6)
-              atype(m) = rbuffer(ine+7)
-              q(m)  = rbuffer(ine+8)
+              rnorm(m,1:3) = rbuffer(ine+1:ine+3)
+              avs%v(m,1:3) = rbuffer(ine+4:ine+6)
+              avs%atype(m) = rbuffer(ine+7)
+              avs%q(m)  = rbuffer(ine+8)
               qs(m) = rbuffer(ine+9)
               qt(m) = rbuffer(ine+10)
               qsfp(m) = rbuffer(ine+11)
               qsfv(m) = rbuffer(ine+12)
       
          case(MODE_COPY)
-              pos(m,1:3) = rbuffer(ine+1:ine+3)
-              atype(m) = rbuffer(ine+4)
-              q(m)  = rbuffer(ine+5)
+              rnorm(m,1:3) = rbuffer(ine+1:ine+3)
+              avs%atype(m) = rbuffer(ine+4)
+              avs%q(m)  = rbuffer(ine+5)
               frcindx(m) = nint(rbuffer(ine+6))
               qs(m) = rbuffer(ine+7)
               qt(m) = rbuffer(ine+8)
@@ -387,7 +397,7 @@ if(imode /= MODE_CPBK) then
            case(MODE_QCOPY2)
               hs(m) = rbuffer(ine+1)
               ht(m) = rbuffer(ine+2)
-              q(m)  = rbuffer(ine+3)
+              avs%q(m)  = rbuffer(ine+3)
 
            case(MODE_STRESSCALC)
               astr(1:6,m) = rbuffer(ine+1:ine+6)
@@ -404,7 +414,7 @@ else if(imode == MODE_CPBK) then
       ine=i*ne
 !--- Append the transferred forces into the original position of force array.
       m = nint(rbuffer(ine+1))
-      f(m,1:3) = f(m,1:3) + rbuffer(ine+2:ine+4)
+      avs%f(m,1:3) = avs%f(m,1:3) + rbuffer(ine+2:ine+4)
 #ifdef STRESS
       astr(1:6,m) = astr(1:6,m) + rbuffer(ine+5:ine+10)
 #endif
@@ -462,17 +472,17 @@ logical :: isInside
 i = mod(dflag,2)  !<- i=1 means positive, i=0 means negative direction 
 select case(dflag)
    case(1) 
-      isInside = lbox(1) - dr(1) < pos(idx,1)
+      isInside = lbox(1) - dr(1) < rnorm(idx,1)
    case(2) 
-      isInside = pos(idx,1) <= dr(1)
+      isInside = rnorm(idx,1) <= dr(1)
    case(3) 
-      isInside = lbox(2) - dr(2) < pos(idx,2)
+      isInside = lbox(2) - dr(2) < rnorm(idx,2)
    case(4) 
-      isInside = pos(idx,2) <= dr(2)
+      isInside = rnorm(idx,2) <= dr(2)
    case(5) 
-      isInside = lbox(3) - dr(3) < pos(idx,3)
+      isInside = lbox(3) - dr(3) < rnorm(idx,3)
    case(6) 
-      isInside = pos(idx,3) <= dr(3)
+      isInside = rnorm(idx,3) <= dr(3)
    case default
       write(6,*) "ERROR: no matching directional flag in isInside: ", dflag
 end select

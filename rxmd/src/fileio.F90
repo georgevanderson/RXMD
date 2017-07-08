@@ -1,33 +1,35 @@
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(ffp, avs, rxp, fileNameBase)
-use base; use atoms; use parameters; use rxmd_params
+subroutine OUTPUT(ffp, avs, rxp, mpt, fileNameBase)
+use base; use atoms; use parameters; use mpi_vars; use rxmd_params
 !----------------------------------------------------------------------------------------
 implicit none
 
 type(atom_vars),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
 type(rxmd_param_type),intent(in) :: rxp
+type(mpi_var_type),intent(in) :: mpt
 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
-print*,rxp%isBinary, rxp%isBondFile, rxp%isPDB
 
 if(rxp%isBinary) then
-  call WriteBIN(avs, rxp, fileNameBase)
+  call WriteBIN(avs, rxp, mpt, fileNameBase)
 endif
 
-if(rxp%isBondFile) call WriteBND(avs, fileNameBase)
-if(rxp%isPDB) call WritePDB(ffp, avs, fileNameBase)
+if(rxp%isBondFile) call WriteBND(avs, mpt, fileNameBase)
+if(rxp%isPDB) call WritePDB(ffp, avs, mpt, fileNameBase)
 
 return
 
 Contains 
 
 !--------------------------------------------------------------------------
-subroutine WriteBND(avs, fileNameBase)
+subroutine WriteBND(avs, mpt, fileNameBase)
+use mpi_vars
 !--------------------------------------------------------------------------
 implicit none
 
 type(atom_vars),intent(in) :: avs 
+type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i, ity, j, j1, jty, m
@@ -71,7 +73,7 @@ localDataSize=NATOMS*(baseCharPerAtom)+m*(1+12+6)
 
 if( (baseCharPerAtom+MAXNEIGHBS*(1+12+6)) > MaxBNDLineSize) then
     print'(a,i6,2i12)', 'ERROR: MaxBNDLineSize is too small @ WriteBND', &
-                    myid, baseCharPerAtom+MAXNEIGHBS*(1+12+6), MaxBNDLineSize
+                    mpt%myid, baseCharPerAtom+MAXNEIGHBS*(1+12+6), MaxBNDLineSize
 endif
 
 call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".bnd", &
@@ -84,7 +86,7 @@ call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
 offset=scanbuf
 
 ! nprocs-1 rank has the total data size
-call MPI_Bcast(scanbuf,1,MPI_INTEGER,nprocs-1,MPI_COMM_WORLD,ierr)
+call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,MPI_COMM_WORLD,ierr)
 fileSize=scanbuf
 
 call MPI_File_set_size(fh, fileSize, ierr)
@@ -148,13 +150,14 @@ return
 end subroutine
 
 !--------------------------------------------------------------------------
-subroutine WritePDB(ffp, avs, fileNameBase)
-use parameters
+subroutine WritePDB(ffp, avs, mpt, fileNameBase)
+use parameters;  use mpi_vars
 !--------------------------------------------------------------------------
 implicit none
 
 type(atom_vars),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
+type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i, ity, igd, l2g
@@ -188,7 +191,7 @@ call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
 offset=scanbuf
 
 ! nprocs-1 rank has the total data size
-call MPI_Bcast(scanbuf,1,MPI_INTEGER,nprocs-1,MPI_COMM_WORLD,ierr)
+call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,MPI_COMM_WORLD,ierr)
 fileSize=scanbuf
 
 call MPI_File_set_size(fh, fileSize, ierr)
@@ -245,12 +248,13 @@ end subroutine
 end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
-subroutine ReadBIN(avs, fileName)
-use base; use atoms; use MemoryAllocator
+subroutine ReadBIN(avs, mpt, fileName)
+use base; use atoms; use mpi_vars; use MemoryAllocator
 !--------------------------------------------------------------------------
 implicit none
 
 character(*),intent(in) :: fileName
+type(mpi_var_type),intent(out) :: mpt
 type(atom_vars),intent(out) :: avs 
 
 integer :: i,i1
@@ -277,7 +281,7 @@ call system_clock(ti,tk)
 !  Number of resident atoms per each MPI rank (nprocs integers) 
 !  current step (1 integer) + lattice parameters (6 doubles)
 
-nmeta=4+nprocs+1
+nmeta=4+mpt%nprocs+1
 allocate(idata(nmeta))
 metaDataSize = 4*nmeta + 8*6
 
@@ -292,7 +296,7 @@ offsettmp=4*nmeta
 call MPI_File_Seek(fh,offsettmp,MPI_SEEK_SET,ierr)
 call MPI_File_Read(fh,ddata,6,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
-NATOMS = idata(4+myid+1)
+NATOMS = idata(4+mpt%myid+1)
 current_step = idata(nmeta)
 deallocate(idata)
 lata=ddata(1); latb=ddata(2); latc=ddata(3)
@@ -358,13 +362,14 @@ return
 end
 
 !--------------------------------------------------------------------------
-subroutine WriteBIN(avs, rxp, fileNameBase)
-use base; use rxmd_params; use atoms
+subroutine WriteBIN(avs, rxp, mpt, fileNameBase)
+use base; use rxmd_params; use mpi_vars; use atoms
 !--------------------------------------------------------------------------
 implicit none
 
 type(atom_vars),intent(in) :: avs 
 type(rxmd_param_type),intent(in) :: rxp
+type(mpi_var_type),intent(in) :: mpt
 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
@@ -390,7 +395,7 @@ call xu2xs(avs%pos,rnorm,NATOMS)
 !  Total Number of MPI ranks and MPI ranks in xyz (4 integers)
 !  Number of resident atoms per each MPI rank (nprocs integers) 
 !  current step (1 integer) + lattice parameters (6 doubles)
-nmeta=4+nprocs+1
+nmeta=4+mpt%nprocs+1
 metaDataSize = 4*nmeta + 8*6
 
 ! Get local datasize: 10 doubles for each atoms
@@ -407,16 +412,16 @@ offset = scanbuf + metaDataSize
 ! save metadata at the beginning of file
 allocate(ldata(nmeta),gdata(nmeta))
 ldata(:)=0
-ldata(4+myid+1)=NATOMS
+ldata(4+mpt%myid+1)=NATOMS
 call MPI_ALLREDUCE(ldata,gdata,nmeta,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
-gdata(1)=nprocs
+gdata(1)=mpt%nprocs
 gdata(2:4)=rxp%vprocs
 gdata(nmeta)=nstep+current_step
 
 ddata(1)=lata; ddata(2)=latb; ddata(3)=latc
 ddata(4)=lalpha; ddata(5)=lbeta; ddata(6)=lgamma
 
-if(myid==0) then
+if(mpt%myid==0) then
    offsettmp=0
    call MPI_File_Seek(fh,offsettmp,MPI_SEEK_SET,ierr)
    call MPI_File_Write(fh,gdata,nmeta,MPI_INTEGER,MPI_STATUS_IGNORE,ierr)

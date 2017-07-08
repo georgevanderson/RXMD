@@ -1,11 +1,13 @@
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla)
-use base; use rxmd_params; use cmdline_args; use parameters; use atoms; use MemoryAllocator
+SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla, mpt)
+use base; use rxmd_params; use cmdline_args; use mpi_vars
+use parameters; use atoms; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
 implicit none
 
+type(mpi_var_type),intent(in) :: mpt
 type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
 type(atom_vars),intent(out) :: avs
@@ -16,14 +18,6 @@ real(8) :: mm, gmm, dns, mat(3,3)
 integer(8) :: i8
 real(8) :: rcsize(3), maxrcell
 
-Interface
-   subroutine ReadBIN(avs, fileName)
-      use base
-      type(atom_vars),intent(out) :: avs
-      character(*),intent(in) :: fileName
-   end subroutine
-end interface
-
 !--- summary file keeps potential energies, box parameters during MD simulation
 !--- intended to be used for validation of code change. 
 if(cla%saveRunProfile) open(RunProfileFD, file=RunProfilePath, status='unknown')
@@ -31,16 +25,16 @@ if(cla%saveRunProfile) open(RunProfileFD, file=RunProfilePath, status='unknown')
 call GetRxmdParams(rxp, cla%ParmPath)
 
 !--- an error trap
-if(rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3) /= nprocs ) then
-  if(myid==0) write(6,'(a60,3i3,i5)')  &
-  "ERROR: requested/allocated # of procs are not consistent: ", rxp%vprocs(1:3), nprocs
-  call MPI_FINALIZE(ierr)
+if(rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3) /= mpt%nprocs ) then
+  if(mpt%myid==0) write(6,'(a60,3i3,i5)')  &
+  "ERROR: requested/allocated # of procs are not consistent: ", rxp%vprocs(1:3), mpt%nprocs
+  call MPI_FINALIZE(mpt%ierr)
   stop
 endif
 
 !--- initialize charge with QEq
 if(rxp%mdmode==0) then
-  if(myid==0) then
+  if(mpt%myid==0) then
     print'(a,f12.3,a,i6,a)', &
          'INFO: mdmode==0, setting isQEQ is 1. Atomic velocities are scaled to ', &
           rxp%treq, ' [K] every ', rxp%sstep, ' steps.'
@@ -58,9 +52,9 @@ Lex_w2=2.d0*rxp%Lex_k/rxp%dt/rxp%dt
 rxp%treq=rxp%treq/UTEMP0
 
 !--- setup the vector ID and parity for processes, in x, y and z order.
-vID(1)=mod(myid,rxp%vprocs(1))
-vID(2)=mod(myid/rxp%vprocs(1),rxp%vprocs(2))
-vID(3)=myid/(rxp%vprocs(1)*rxp%vprocs(2))
+vID(1)=mod(mpt%myid,rxp%vprocs(1))
+vID(2)=mod(mpt%myid/rxp%vprocs(1),rxp%vprocs(2))
+vID(3)=mpt%myid/(rxp%vprocs(1)*rxp%vprocs(2))
 myparity(1)=mod(vID(1),2)
 myparity(2)=mod(vID(2),2)
 myparity(3)=mod(vID(3),2)
@@ -101,7 +95,7 @@ call allocatord2d(avs%f,1,NBUFFER,1,3)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(avs, trim(cla%dataDir)//"/rxff.bin")
+call ReadBIN(avs, mpt, trim(cla%dataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
@@ -186,6 +180,7 @@ rcsize(2) = latb/rxp%vprocs(2)/cc(2)
 rcsize(3) = latc/rxp%vprocs(3)/cc(3)
 maxrcell = maxval(rcsize(1:3))
 
+
 !--- setup 10[A] radius mesh to avoid visiting unecessary cells 
 call GetNonbondingMesh(ffp, rxp)
 
@@ -204,9 +199,9 @@ allocate(maxas(i,nmaxas))
 maxas(:,:)=0
 
 !--- print out parameters and open data file
-if(myid==0) then
+if(mpt%myid==0) then
    write(6,'(a)') "----------------------------------------------------------------"
-   write(6,'(a30,i9,a3,i9)') "req/alloc # of procs:", rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3), "  /",nprocs
+   write(6,'(a30,i9,a3,i9)') "req/alloc # of procs:", rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3), "  /",mpt%nprocs
    write(6,'(a30,3i9)')      "req proc arrengement:", rxp%vprocs(1),rxp%vprocs(2),rxp%vprocs(3)
    write(6,'(a30,a70)')      "parameter set:", FFDescript
    write(6,'(a30,es12.2)')   "time step[fs]:",rxp%dt*UTIME
@@ -252,7 +247,7 @@ END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
 SUBROUTINE INITVELOCITY(ffp, atype, v, treq)
-use parameters; use atoms
+use parameters; use atoms; use mpi_vars
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
 implicit none
