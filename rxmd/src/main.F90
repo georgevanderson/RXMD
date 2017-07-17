@@ -41,7 +41,7 @@ do nstep=0, rxp%ntime_step-1
        if(cla%saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
    if(mod(nstep, rxp%fstep)==0) &
-        call OUTPUT(ffp, avs, rxp, GetFileNameBase(cla%dataDir, current_step+nstep))
+        call OUTPUT(ffp, avs, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
 
    if(mod(nstep, rxp%sstep)==0 .and. rxp%mdmode==4) &
       avs%v(1:NATOMS,1:3)=rxp%vsfact*avs%v(1:NATOMS,1:3)
@@ -84,7 +84,7 @@ do nstep=0, rxp%ntime_step-1
 enddo
 
 !--- save the final configurations
-call OUTPUT(ffp, avs, rxp, GetFileNameBase(cla%dataDir, current_step+nstep))
+call OUTPUT(ffp, avs, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
 
 !--- update rxff.bin in working directory for continuation run
 if(rxp%isBinary) call WriteBIN(avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
