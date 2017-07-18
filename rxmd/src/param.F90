@@ -1,5 +1,5 @@
 !-------------------------------------------------------------------------------------------
-module parameters
+module ff_params
 !-------------------------------------------------------------------------------------------
 !  This module stores the parameters input from the rxmda.in file.  This file is 
 !    intentionally very similar to the input setup used by Adri van Duin at Caltech (to aid
@@ -449,4 +449,4 @@ fp%CTap(0:7)=(/1.d0, 0.d0, 0.d0, 0.d0,   -35.d0/(fp%rctap)**4, &
 
 END SUBROUTINE
 
-end module parameters 
+end module

@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
 subroutine QEq(ffp, avs, mpt, rxp)
-use atom_vars; use atoms; use rxmd_params; use mpi_vars; use parameters; use mpi_vars
+use atom_vars; use atoms; use rxmd_params; use mpi_vars; use ff_params; use mpi_vars
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -180,7 +180,7 @@ CONTAINS
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine qeq_initialize()
-use atoms; use parameters; use MemoryAllocator
+use atoms; use ff_params; use MemoryAllocator
 ! This subroutine create a neighbor list with cutoff length = 10[A] and save the hessian into <hessian>.  
 ! <nbrlist> and <hessian> will be used for different purpose later.
 !-----------------------------------------------------------------------------------------------------------------------
@@ -264,7 +264,7 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine get_hsh(Est)
-use atoms; use parameters
+use atoms; use ff_params 
 ! This subroutine updates hessian*cg array <hsh> and the electrostatic energy <Est>.  
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
@@ -308,7 +308,7 @@ end subroutine
 subroutine get_gradient(Gnew)
 ! Update gradient vector <g> and new residue <Gnew>
 !-----------------------------------------------------------------------------------------------------------------------
-use atoms; use parameters
+use atoms; use ff_params
 implicit none
 real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)

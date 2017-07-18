@@ -1,6 +1,6 @@
 !----------------------------------------------------------------------------------------
 subroutine OUTPUT(ffp, avs, rxp, mpt, fileNameBase)
-use atom_vars; use atoms; use parameters; use mpi_vars; use rxmd_params
+use atom_vars; use atoms; use ff_params; use mpi_vars; use rxmd_params
 !----------------------------------------------------------------------------------------
 implicit none
 
@@ -151,7 +151,7 @@ end subroutine
 
 !--------------------------------------------------------------------------
 subroutine WritePDB(ffp, avs, mpt, fileNameBase)
-use parameters;  use mpi_vars
+use ff_params;  use mpi_vars
 !--------------------------------------------------------------------------
 implicit none
 
@@ -248,14 +248,16 @@ end subroutine
 end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
-subroutine ReadBIN(avs, mpt, fileName)
-use atom_vars; use atoms; use mpi_vars; use MemoryAllocator
+subroutine ReadBIN(avs, rxp, mpt, fileName)
+use atom_vars; use rxmd_params; use atoms; use mpi_vars; use MemoryAllocator
 !--------------------------------------------------------------------------
 implicit none
 
-character(*),intent(in) :: fileName
-type(mpi_var_type),intent(out) :: mpt
 type(atom_var_type),intent(out) :: avs 
+type(rxmd_param_type),intent(in) :: rxp
+type(mpi_var_type),intent(out) :: mpt
+
+character(*),intent(in) :: fileName
 
 integer :: i,i1
 

@@ -1,7 +1,7 @@
 !------------------------------------------------------------------------------
 program rxmd
 use atom_vars; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
-use parameters; use CG
+use ff_params; use CG
 !------------------------------------------------------------------------------
 implicit none
 integer :: i,it1,it2,irt,provided
@@ -220,7 +220,7 @@ end subroutine
 
 !----------------------------------------------------------------------------------------
 subroutine PRINTE(mpt, pstep, atype, v, q)
-use atoms; use parameters; use MemoryAllocator; use mpi_vars
+use atoms; use ff_params; use MemoryAllocator; use mpi_vars
 ! calculate the kinetic energy and sum up all of potential energies, then print them.
 !----------------------------------------------------------------------------------------
 implicit none
@@ -336,7 +336,7 @@ end subroutine
 
 !----------------------------------------------------------------------
 subroutine NEIGHBORLIST(ffp, nlayer, atype, pos)
-use atoms; use parameters
+use atoms; use ff_params
 ! calculate neighbor list for atoms witin cc(1:3, -nlayer:nlayer) cells.
 !----------------------------------------------------------------------
 implicit none
@@ -447,7 +447,7 @@ end subroutine
 
 !----------------------------------------------------------------------
 subroutine GetNonbondingPairList(rctap2, pos)
-use atoms; use parameters
+use atoms; use ff_params 
 !----------------------------------------------------------------------
 implicit none
 
@@ -508,7 +508,7 @@ end subroutine
 
 !----------------------------------------------------------------------
 subroutine angular_momentum(mass, atype, pos, v)
-use atoms; use parameters; use mpi_vars
+use atoms; use ff_params; use mpi_vars
 !----------------------------------------------------------------------
 implicit none
 
@@ -663,7 +663,7 @@ end subroutine
 
 !-----------------------------------------------------------------------
 subroutine ScaleTemperature(ffp, mpt, treq, atype, v)
-use atoms; use parameters; use mpi_vars
+use atoms; use ff_params; use mpi_vars
 !-----------------------------------------------------------------------
 implicit none
 
@@ -690,7 +690,7 @@ end
 
 !-----------------------------------------------------------------------
 subroutine LinearMomentum(ffp, mpt, atype, v)
-use atoms; use parameters; use mpi_vars
+use atoms; use ff_params; use mpi_vars
 !-----------------------------------------------------------------------
 implicit none
 

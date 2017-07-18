@@ -1,7 +1,7 @@
 !------------------------------------------------------------------------------------------
 SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla, mpt)
 use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
-use parameters; use atoms; use MemoryAllocator
+use ff_params; use atoms; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
@@ -95,7 +95,7 @@ call allocatord2d(avs%f,1,NBUFFER,1,3)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(avs, mpt, trim(cla%dataDir)//"/rxff.bin")
+call ReadBIN(avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
@@ -247,7 +247,7 @@ END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
 SUBROUTINE INITVELOCITY(ffp, atype, v, treq)
-use parameters; use atoms; use mpi_vars
+use ff_params; use atoms; use mpi_vars
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
 implicit none
@@ -318,7 +318,7 @@ end subroutine
 
 !------------------------------------------------------------------------------------------
 subroutine CUTOFFLENGTH(ffp)
-use atoms; use parameters
+use atoms; use ff_params 
 !------------------------------------------------------------------------------------------
 implicit none
 type(forcefield_params),intent(in) :: ffp 
@@ -378,7 +378,7 @@ end subroutine
 
 !------------------------------------------------------------------------------------------
 subroutine POTENTIALTABLE(ffp)
-use atoms; use parameters; use MemoryAllocator
+use atoms; use ff_params; use MemoryAllocator
 !------------------------------------------------------------------------------------------
 implicit none
 type(forcefield_params),intent(in) :: ffp 
@@ -467,7 +467,7 @@ end subroutine
 
 !----------------------------------------------------------------
 subroutine GetNonbondingMesh(ffp, rxp)
-use atoms; use rxmd_params; use parameters; use MemoryAllocator
+use atoms; use rxmd_params; use ff_params; use MemoryAllocator
 ! setup 10[A] radius mesh to avoid visiting unecessary cells 
 !----------------------------------------------------------------
 implicit none
@@ -581,7 +581,7 @@ end subroutine
 
 !----------------------------------------------------------------
 subroutine UpdateBoxParams(rxp)
-use atoms; use rxmd_params; use parameters
+use atoms; use rxmd_params; use ff_params 
 !----------------------------------------------------------------
 implicit none
 

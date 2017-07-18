@@ -1,6 +1,6 @@
 !----------------------------------------------------------------------------------------------------------------------
 subroutine FORCE(ffp, mpt, atype, pos, f, q)
-use atom_vars; use mpi_vars; use parameters; use atoms 
+use atom_vars; use mpi_vars; use ff_params; use atoms 
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -139,7 +139,7 @@ end subroutine
 
 !-------------------------------------------------------------------------------------
 subroutine Elnpr()
-use parameters;use atoms
+use ff_params;use atoms
 !-------------------------------------------------------------------------------------
 implicit none
 
@@ -308,7 +308,7 @@ END subroutine
 
 !------------------------------------------------------------------------------------
 subroutine E3b()
-use parameters; use atoms
+use ff_params; use atoms
 !------------------------------------------------------------------------------------
 implicit none
 integer :: i,j,k, i1,j1,k1, ity,jty,kty, inxn, n,n1
@@ -544,7 +544,7 @@ it_timer(11)=it_timer(11)+(tj-ti)
 END subroutine
 !----------------------------------------------------------------------------------------------------------------------
 subroutine Ehb()
-use parameters; use atoms
+use ff_params; use atoms
 ! Note: 02-09-05 <kn>
 ! To find out hydrogen bonding combinations, <vnhbp> (one atom parameter, 2nd row, 8th column) is used to 
 ! identify whether an atoms is hydrogen or not, <vnhbp>=1 for H, <vnhbp>=2 for O,N,S and <vnhbp>=0 for others. 
@@ -667,7 +667,7 @@ end subroutine
 
 !----------------------------------------------------------------------------------------------------------
 subroutine ENbond()
-use parameters; use atoms
+use ff_params; use atoms
 !----------------------------------------------------------------------------------------------------------
 !  This subroutine calculates the energy and the forces due to the Van der Waals and Coulomb terms 
 !----------------------------------------------------------------------------------------------------------
@@ -775,7 +775,7 @@ END subroutine
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine Ebond()
-use atoms; use parameters 
+use atoms; use ff_params 
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
 integer :: i,j, i1,j1, ity, jty, inxn
@@ -829,7 +829,7 @@ end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine E4b()
-use atoms; use parameters
+use atoms; use ff_params
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 integer :: i,j,k,l, i1,j1,k1,l1, k2, ity,jty,kty,lty, inxn
