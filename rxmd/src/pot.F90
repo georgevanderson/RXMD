@@ -1,11 +1,13 @@
 !----------------------------------------------------------------------------------------------------------------------
-subroutine FORCE(ffp, mpt, atype, pos, f, q)
-use atom_vars; use mpi_vars; use ff_params; use atoms 
+subroutine FORCE(ffp, mpt, bos, atype, pos, f, q)
+use atom_vars; use mpi_vars; use ff_params; use atoms; use bo
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt
+type(bo_var_type) :: bos
+
 type(atom_var_type) :: avs 
 
 real(8),intent(inout) :: atype(NBUFFER), q(NBUFFER)
@@ -21,7 +23,7 @@ real(8) :: dr(3)
 integer :: itype(NBUFFER) !-- integer part of atype
 integer :: gtype(NBUFFER) !-- global ID from atype
 
-ccbnd(:) = 0.d0
+bos%ccbnd(:) = 0.d0
 f(:,:) = 0.d0
 PE(:) = 0.d0
 
@@ -56,7 +58,7 @@ do i=1, NBUFFER
 enddo
 
 !$omp parallel default(shared)
-CALL BOCALC(ffp, NMINCELL, atype, pos)
+CALL BOCALC(bos, ffp, NMINCELL, atype, pos)
 !$omp end parallel
 !$omp parallel default(shared)
 CALL ENbond()
@@ -118,7 +120,7 @@ do i=1, copyptr(6)
   do j1=1, nbrlist(i,0)
      j=nbrlist(i,j1)
      dr(1:3) = pos(i,1:3) - pos(j,1:3)
-     ff(1:3) = ccbnd(i)*dBOp(i,j1)*dr(1:3)
+     ff(1:3) = bos%ccbnd(i)*bos%dBOp(i,j1)*dr(1:3)
      f(i,1:3) = f(i,1:3) - ff(1:3)
      f(j,1:3) = f(j,1:3) + ff(1:3)
 #ifdef STRESS
@@ -128,7 +130,7 @@ do i=1, copyptr(6)
   enddo
 
 !--- reset ccbnd to zero for next turn. first rest is done during initialization.
-  ccbnd(i)=0.d0
+  bos%ccbnd(i)=0.d0
 
 enddo
 
@@ -178,7 +180,7 @@ do i = 1, copyptr(6)
 
    if(ity==0) cycle
 
-   deltaE = -ffp%Vale(ity) + ffp%Val(ity) + delta(i)
+   deltaE = -ffp%Vale(ity) + ffp%Val(ity) + bos%delta(i)
 
    dEh = deltaE*0.5d0
    idEh = is_idEH*int(dEh)
@@ -213,8 +215,8 @@ do i=1, NATOMS
       j = nbrlist(i, j1)
       jty = itype(j)
       inxn = ffp%inxn2(ity,jty)
-      sum_ovun1 = sum_ovun1 + ffp%povun1(inxn)*ffp%Desig(inxn)*BO(0,i,j1)
-      sum_ovun2 = sum_ovun2 + (delta(j)-deltalp(j))*(BO(2,i,j1) + BO(3,i,j1))
+      sum_ovun1 = sum_ovun1 + ffp%povun1(inxn)*ffp%Desig(inxn)*bos%BO(0,i,j1)
+      sum_ovun2 = sum_ovun2 + (bos%delta(j)-deltalp(j))*(bos%BO(2,i,j1) + bos%BO(3,i,j1))
    enddo
 
 !--- Lone Pair
@@ -223,7 +225,7 @@ do i=1, NATOMS
 
 !--- Over Coordinate + Common part with Under Coordinate
    expovun1 = ffp%povun3(ity) * exp( ffp%povun4(ity) * sum_ovun2 )
-   deltalpcorr = delta(i) - deltalp(i)/(1.d0 + expovun1) 
+   deltalpcorr = bos%delta(i) - deltalp(i)/(1.d0 + expovun1) 
    expovun2=exp(ffp%povun2(ity)*deltalpcorr)
 
 !=== if one atom flys away, this term becomes zero because the total bond-order becomes zero.
@@ -278,15 +280,18 @@ do i=1, NATOMS
       inxn = ffp%inxn2(ity,jty)
 
       CEover(5) = CEover(1)*ffp%povun1(inxn)*ffp%desig(inxn)
-      CEover(6) = CEover(4)*( 1.d0 - dDlp(j)) * (BO(2,i,j1) + BO(3,i,j1))
-      CEover(7) = CEover(4)*( delta(j) - deltalp(j) )
+      CEover(6) = CEover(4)*( 1.d0 - dDlp(j)) * (bos%BO(2,i,j1) + bos%BO(3,i,j1))
+      CEover(7) = CEover(4)*( bos%delta(j) - deltalp(j) )
 
-      CEunder(5) = CEunder(4)*(1.d0 - dDlp(j))*(BO(2,i,j1) + BO(3,i,j1))
-      CEunder(6) = CEunder(4)*(delta(j)-deltalp(j)) 
+      CEunder(5) = CEunder(4)*(1.d0 - dDlp(j))*(bos%BO(2,i,j1) + bos%BO(3,i,j1))
+      CEunder(6) = CEunder(4)*(bos%delta(j) - deltalp(j)) 
  
       CElp_b = CElp(1) + CEover(3) + CEover(5) + CEunder(3)
       CElp_bpp = CEover(7) + CEunder(6)
-      coeff(1:3) = CElp_b + (/0.d0, CElp_bpp, CElp_bpp/) 
+
+      coeff(1) = CElp_b
+      coeff(2) = CElp_b + CElp_bpp
+      coeff(3) = CElp_b + CElp_bpp 
 
       i1=nbrindx(i,j1)
       call ForceBbo(i,j1, j,i1, coeff)
@@ -350,17 +355,17 @@ do j=1, NATOMS
    sum_BO8 = 0.d0
    sum_SBO1 = 0.d0
    do n1=1, nbrlist(j,0)
-      sum_BO8 = sum_BO8 - BO(0,j,n1)**8.d0
-      sum_SBO1 = sum_SBO1 + BO(2,j,n1) + BO(3,j,n1)
+      sum_BO8 = sum_BO8 - bos%BO(0,j,n1)**8.d0
+      sum_SBO1 = sum_SBO1 + bos%BO(2,j,n1) + bos%BO(3,j,n1)
    enddo
    prod_SBO = exp(sum_BO8)
 
-   delta_ang = delta(j) + ffp%Val(jty) - ffp%Valangle(jty)   
+   delta_ang = bos%delta(j) + ffp%Val(jty) - ffp%Valangle(jty)   
 
    do i1=1, nbrlist(j,0)-1
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-      BOij = BO(0,j,i1) - cutof2_esub
+      BOij = bos%BO(0,j,i1) - cutof2_esub
       if(BOij>0.d0) then ! react.f, line 4827 
       i=nbrlist(j,i1)
       ity = itype(i)
@@ -371,10 +376,10 @@ do j=1, NATOMS
       do k1=i1+1, nbrlist(j,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-         BOjk = BO(0,j,k1)-cutof2_esub
+         BOjk = bos%BO(0,j,k1)-cutof2_esub
 
          if(BOjk>0.d0) then !react.f, line 4830
-         if(BO(0,j,i1)*BO(0,j,k1)>cutof2_esub) then !react.f, line 4831
+         if(bos%BO(0,j,i1)*bos%BO(0,j,k1)>cutof2_esub) then !react.f, line 4831
 
          k=nbrlist(j,k1)
          kty = itype(k)
@@ -448,8 +453,8 @@ do j=1, NATOMS
             CEval(8) = CEval(4)/sin_ijk
 
 !--- PEpen part
-            exp_pen3 = exp(-ffp%ppen3(inxn)*delta(j))
-            exp_pen4 = exp( ffp%ppen4(inxn)*delta(j))
+            exp_pen3 = exp(-ffp%ppen3(inxn)*bos%delta(j))
+            exp_pen4 = exp( ffp%ppen4(inxn)*bos%delta(j))
             fn9 = (2.d0 + exp_pen3) / (1.d0 + exp_pen3 + exp_pen4)
             exp_pen2ij = exp( -ffp%ppen2(inxn)*(BOij-2.d0)*(BOij-2.d0) )
             exp_pen2jk = exp( -ffp%ppen2(inxn)*(BOjk-2.d0)*(BOjk-2.d0) )
@@ -467,9 +472,9 @@ do j=1, NATOMS
             CEpen(1:3) = CEpen(1:3)*PEpen 
 
 !--- PEcoa part:
-            sum_BOi = delta(i) + ffp%Val(ity)
-            sum_BOk = delta(k) + ffp%Val(kty)
-            delta_val = delta(j) + ffp%Val(jty) - ffp%Valval(jty) 
+            sum_BOi = bos%delta(i) + ffp%Val(ity)
+            sum_BOk = bos%delta(k) + ffp%Val(kty)
+            delta_val = bos%delta(j) + ffp%Val(jty) - ffp%Valval(jty) 
 
             exp_coa2 = exp( ffp%pcoa2(inxn)*delta_val )
             exp_coa3i = exp( -ffp%pcoa3(inxn)*(-BOij + sum_BOi)**2 )
@@ -515,7 +520,7 @@ do j=1, NATOMS
             call ForceB(j,k1, k,j1, CE3body_b(2)) !BO_jk
 
             do n1=1, nbrlist(j,0)
-               coeff(1:3) = CE3body_d(1) + CEval(6)*BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
+               coeff(1:3) = CE3body_d(1) + CEval(6)*bos%BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
                n  = nbrlist(j, n1)
                j1 = nbrindx(j, n1)
@@ -579,7 +584,7 @@ do i=1, NATOMS
       j = nbrlist(i,j1)
       jty = itype(j)
 
-      if( (jty==2) .and. (BO(0,i,j1)>MINBO0) ) then
+      if( (jty==2) .and. (bos%BO(0,i,j1)>MINBO0) ) then
 
           do kk=1, nbplist(i,0)
 
@@ -612,7 +617,7 @@ do i=1, NATOMS
                   sin_xhz4 = sin_ijk_half**4
                   cos_xhz1 = ( 1.d0 - cos_ijk )
    
-                  exp_hb2 = exp( -ffp%phb2(inxnhb)*BO(0,i,j1) )
+                  exp_hb2 = exp( -ffp%phb2(inxnhb)*bos%BO(0,i,j1) )
                   exp_hb3 = exp( -ffp%phb3(inxnhb)*(ffp%r0hb(inxnhb)/rjk(0) + rjk(0)/ffp%r0hb(inxnhb) - 2.d0) )
    
                   PEhb = ffp%phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*sin_xhz4
@@ -802,13 +807,13 @@ do i=1, NATOMS
         jty = itype(j)
         inxn = ffp%inxn2(ity, jty)
 
-        exp_be12 = exp( ffp%pbe1(inxn)*( 1.d0 - BO(1,i,j1)**ffp%pbe2(inxn) ) )
+        exp_be12 = exp( ffp%pbe1(inxn)*( 1.d0 - bos%BO(1,i,j1)**ffp%pbe2(inxn) ) )
 
-        PEbo = - ffp%Desig(inxn)*BO(1,i,j1)*exp_be12 - ffp%Depi(inxn)*BO(2,i,j1) - ffp%Depipi(inxn)*BO(3,i,j1) 
+        PEbo = - ffp%Desig(inxn)*bos%BO(1,i,j1)*exp_be12 - ffp%Depi(inxn)*bos%BO(2,i,j1) - ffp%Depipi(inxn)*bos%BO(3,i,j1) 
 
         PE(1) = PE(1) + PEbo
 
-        CEbo = -ffp%Desig(inxn)*exp_be12*( 1.d0 - ffp%pbe1(inxn)*ffp%pbe2(inxn)*BO(1,i,j1)**ffp%pbe2(inxn) )
+        CEbo = -ffp%Desig(inxn)*exp_be12*( 1.d0 - ffp%pbe1(inxn)*ffp%pbe2(inxn)*bos%BO(1,i,j1)**ffp%pbe2(inxn) )
         coeff(1:3)= (/ CEbo, -ffp%Depi(inxn), -ffp%Depipi(inxn) /)
 
         i1 = nbrindx(i,j1)
@@ -864,14 +869,14 @@ call system_clock(ti,tk)
 do j=1,NATOMS
 
   jty = itype(j)
-  delta_ang_j = delta(j) + ffp%Val(jty) - ffp%Valangle(jty)
+  delta_ang_j = bos%delta(j) + ffp%Val(jty) - ffp%Valangle(jty)
   jid = gtype(j)
 
   do k1=1, nbrlist(j,0) 
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-     BOjk = BO(0,j,k1) - cutof2_esub
-     if(BO(0,j,k1) > cutof2_esub) then         !poten.f,line 1829,1830
+     BOjk = bos%BO(0,j,k1) - cutof2_esub
+     if(bos%BO(0,j,k1) > cutof2_esub) then         !poten.f,line 1829,1830
 
         k = nbrlist(j,k1)
         kid = gtype(k)
@@ -880,7 +885,7 @@ do j=1,NATOMS
 
         kty = itype(k)
 
-        delta_ang_k = delta(k) + ffp%Val(kty) - ffp%Valangle(kty)
+        delta_ang_k = bos%delta(k) + ffp%Val(kty) - ffp%Valangle(kty)
         delta_ang_jk = delta_ang_j + delta_ang_k  
 
         rjk(1:3) = pos(j,1:3) - pos(k,1:3)
@@ -889,10 +894,10 @@ do j=1,NATOMS
         do i1=1, nbrlist(j,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-           BOij = BO(0,j,i1) - cutof2_esub
+           BOij = bos%BO(0,j,i1) - cutof2_esub
 
 !--- NOTICE: cutoff condition to ignore bonding.
-           if((BO(0,j,i1)>cutof2_esub) .and. ((BO(0,j,i1)*BO(0,j,k1))>cutof2_esub)) then !poten.f from iv() calculataion
+           if((bos%BO(0,j,i1)>cutof2_esub) .and. ((bos%BO(0,j,i1)*bos%BO(0,j,k1))>cutof2_esub)) then !poten.f from iv() calculataion
 
            i=nbrlist(j,i1)
 
@@ -917,10 +922,10 @@ do j=1,NATOMS
               do l1=1, nbrlist(k,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-                 BOkl = BO(0,k,l1) - cutof2_esub
+                 BOkl = bos%BO(0,k,l1) - cutof2_esub
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-                 if((BO(0,k,l1)>cutof2_esub).and.(BO(0,j,k1)*BO(0,k,l1)>cutof2_esub)) then !poten.f,line 1829,1830
+                 if((bos%BO(0,k,l1)>cutof2_esub).and.(bos%BO(0,j,k1)*bos%BO(0,k,l1)>cutof2_esub)) then !poten.f,line 1829,1830
 
                  l=nbrlist(k,l1)
                  lty = itype(l)
@@ -929,7 +934,7 @@ do j=1,NATOMS
                  if ((inxn/=0).and.(i/=l).and.(j/=l)) then
 
 !--- NOTICE: cutoff condition to ignore bonding.
-                 if( (BO(0,j,i1)*(BO(0,j,k1)**2)*BO(0,k,l1)) > MINBO0) then
+                 if( (bos%BO(0,j,i1)*(bos%BO(0,j,k1)**2)*bos%BO(0,k,l1)) > MINBO0) then
 
                  rkl(1:3) = pos(k,1:3) - pos(l,1:3)
                  rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
@@ -950,7 +955,7 @@ do j=1,NATOMS
                                            (BOkl-1.5d0)**2 ) )
 
 !--- NOTICE: pi-bond value used here is not the subtracted one but the original value. 
-                 btb2 = 2.d0 - BO(2,j,k1) - fn11         !<kn>
+                 btb2 = 2.d0 - bos%BO(2,j,k1) - fn11         !<kn>
                  exp_tor1 = exp( ffp%ptor1(inxn)*btb2**2 )   !<kn>
 
 
@@ -1091,9 +1096,9 @@ do j1=1, nbrlist(i,0)
   j  = nbrlist(i,j1)
   i1 = nbrindx(i,j1)
 
-  Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
+  Cbond(1) = coeff*(bos%A0(i,j1) + bos%BO(0,i,j1)*bos%A1(i,j1) )! Coeff of BOp
   dr(1:3) = pos(i,1:3)-pos(j,1:3)
-  ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
+  ff(1:3) = Cbond(1)*bos%dBOp(i,j1)*dr(1:3)
 
 !$omp atomic
   f(i,1) = f(i,1) - ff(1)
@@ -1114,13 +1119,13 @@ do j1=1, nbrlist(i,0)
   include 'stress'
 #endif
 
-  Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
-  Cbond(3)=coeff*BO(0,i,j1)*A2(j,i1) ! Coeff of deltap_j
+  Cbond(2)=coeff*bos%BO(0,i,j1)*bos%A2(i,j1) ! Coeff of deltap_i
+  Cbond(3)=coeff*bos%BO(0,i,j1)*bos%A2(j,i1) ! Coeff of deltap_j
 
 !$omp atomic
-  ccbnd(i)=ccbnd(i)+Cbond(2)
+  bos%ccbnd(i)=bos%ccbnd(i)+Cbond(2)
 !$omp atomic
-  ccbnd(j)=ccbnd(j)+Cbond(3)
+  bos%ccbnd(j)=bos%ccbnd(j)+Cbond(3)
 
 enddo
 
@@ -1140,10 +1145,10 @@ real(8),intent(IN) :: coeff
 
 real(8) :: Cbond(3),dr(3),ff(3)
 
-Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
+Cbond(1) = coeff*(bos%A0(i,j1) + bos%BO(0,i,j1)*bos%A1(i,j1) )! Coeff of BOp
 
 dr(1:3) = pos(i,1:3) - pos(j,1:3)
-ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
+ff(1:3) = Cbond(1)*bos%dBOp(i,j1)*dr(1:3)
 !$omp atomic
 f(i,1) = f(i,1) - ff(1)
 !$omp atomic
@@ -1164,13 +1169,13 @@ include 'stress'
 #endif
 
 !--- A3 is not necessary anymore with the new BO def. 
-Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
-Cbond(3)=coeff*BO(0,i,j1)*A2(j,i1) ! Coeff of deltap_j
+Cbond(2)=coeff*bos%BO(0,i,j1)*bos%A2(i,j1) ! Coeff of deltap_i
+Cbond(3)=coeff*bos%BO(0,i,j1)*bos%A2(j,i1) ! Coeff of deltap_j
 
 !$omp atomic
-ccbnd(i)=ccbnd(i)+Cbond(2)
+bos%ccbnd(i)=bos%ccbnd(i)+Cbond(2)
 !$omp atomic
-ccbnd(j)=ccbnd(j)+Cbond(3)
+bos%ccbnd(j)=bos%ccbnd(j)+Cbond(3)
 
 return
 end subroutine
@@ -1190,9 +1195,9 @@ real(8) :: Cbond(3),dr(3), ff(3),cBO(3),cf(3)
 !--- 2nd is for pi-bond order and 3rd is for pipi-bond order.
 cf(1:3) = (/ coeff(1), coeff(2)-coeff(1), coeff(3)-coeff(1) /)
 
-Cbond(1) = cf(1)*(A0(i,j1) + BO(0,i,j1)*A1(i,j1))*dBOp(i,j1)        & !full BO
-         + cf(2)*BO(2,i,j1)*( dln_BOp(2,i,j1)+A1(i,j1)*dBOp(i,j1) ) & !pi   BO
-         + cf(3)*BO(3,i,j1)*( dln_BOp(3,i,j1)+A1(i,j1)*dBOp(i,j1) )   !pipi BO
+Cbond(1) = cf(1)*(bos%A0(i,j1) + bos%BO(0,i,j1)*bos%A1(i,j1))*bos%dBOp(i,j1)        & !full BO
+         + cf(2)*bos%BO(2,i,j1)*( bos%dln_BOp(2,i,j1)+bos%A1(i,j1)*bos%dBOp(i,j1) ) & !pi   BO
+         + cf(3)*bos%BO(3,i,j1)*( bos%dln_BOp(3,i,j1)+bos%A1(i,j1)*bos%dBOp(i,j1) )   !pipi BO
 
 dr(1:3) = pos(i,1:3)-pos(j,1:3)
 ff(1:3) = Cbond(1)*dr(1:3)
@@ -1216,15 +1221,17 @@ include 'stress'
 #endif
 
 !--- 1st element is "full"-bond order.
-cBO(1:3) = (/cf(1)*BO(0,i,j1),  cf(2)*BO(2,i,j1),  cf(3)*BO(3,i,j1) /)
+cBO(1) = cf(1)*bos%BO(0,i,j1)
+cBO(2) = cf(2)*bos%BO(2,i,j1)
+cBO(3) = cf(3)*bos%BO(3,i,j1)
 
-Cbond(2)=cBO(1)*A2(i,j1) + (cBO(2)+cBO(3))*A3(i,j1)
-Cbond(3)=cBO(1)*A2(j,i1) + (cBO(2)+cBO(3))*A3(j,i1)
+Cbond(2)=cBO(1)*bos%A2(i,j1) + (cBO(2)+cBO(3))*bos%A3(i,j1)
+Cbond(3)=cBO(1)*bos%A2(j,i1) + (cBO(2)+cBO(3))*bos%A3(j,i1)
 
 !$omp atomic
-ccbnd(i)=ccbnd(i)+Cbond(2)
+bos%ccbnd(i)=bos%ccbnd(i)+Cbond(2)
 !$omp atomic
-ccbnd(j)=ccbnd(j)+Cbond(3)
+bos%ccbnd(j)=bos%ccbnd(j)+Cbond(3)
 
 return
 end subroutine

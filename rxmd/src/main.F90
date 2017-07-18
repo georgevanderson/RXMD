@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
 program rxmd
-use atom_vars; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
+use atom_vars; use bo; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
 use ff_params; use CG
 !------------------------------------------------------------------------------
 implicit none
@@ -12,6 +12,7 @@ type(atom_var_type) :: avs
 type(rxmd_param_type) :: rxp
 type(cmdline_arg_type) :: cla
 type(mpi_var_type) :: mpt
+type(bo_var_type) :: bos
 
 call GetCmdLineArgs(cla)
 
@@ -23,12 +24,12 @@ if(mpt%myid==0)  print'(a30)', 'rxmd has started'
 CALL GETPARAMS(ffp, cla%FFPath, FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(ffp, avs, rxp, cla, mpt)
+CALL INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
 
 if(rxp%mdmode==10) call ConjugateGradient(avs%atype, avs%pos, cla, mpt, rxp%ftol)
 
 call QEq(ffp, avs, mpt, rxp)
-call FORCE(ffp, mpt, avs%atype, avs%pos, avs%f, avs%q)
+call FORCE(ffp, mpt, bos, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
@@ -40,7 +41,7 @@ do nstep=0, rxp%ntime_step-1
        if(cla%saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
    if(mod(nstep, rxp%fstep)==0) &
-        call OUTPUT(ffp, avs, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
+        call OUTPUT(ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
 
    if(mod(nstep, rxp%sstep)==0 .and. rxp%mdmode==4) &
       avs%v(1:NATOMS,1:3)=rxp%vsfact*avs%v(1:NATOMS,1:3)
@@ -72,7 +73,7 @@ do nstep=0, rxp%ntime_step-1
    call COPYATOMS(avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
    
    if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp)
-   call FORCE(ffp, mpt, avs%atype, avs%pos, avs%f, avs%q)
+   call FORCE(ffp, mpt, bos, avs%atype, avs%pos, avs%f, avs%q)
 
 !--- update velocity
    call vkick(1.d0, avs%atype, avs%v, avs%f) 
@@ -83,7 +84,7 @@ do nstep=0, rxp%ntime_step-1
 enddo
 
 !--- save the final configurations
-call OUTPUT(ffp, avs, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
+call OUTPUT(ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
 
 !--- update rxff.bin in working directory for continuation run
 if(rxp%isBinary) call WriteBIN(avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))

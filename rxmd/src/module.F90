@@ -251,9 +251,6 @@ real(8),parameter :: pi=3.14159265358979d0
 real(8),allocatable :: astr(:,:) 
 real(8) :: pint(3,3)
 
-!--- coefficient of bonding energy derivative 
-real(8),allocatable :: ccbnd(:)
-
 real(8) :: HH(3,3,0:1), HHi(3,3), MDBOX, LBOX(0:3), OBOX(1:3) !MD box, local MD box, origin of box.
 integer :: NATOMS         !local # of atoms
 integer(8) :: GNATOMS     !global # of atoms
@@ -274,21 +271,6 @@ integer,allocatable :: nbrlist(:,:), nbrindx(:,:)
 
 !<nbplist> neighbor list of nonbonding interaction, non-bonding pair list
 integer,allocatable :: nbplist(:,:)
-
-!<BO> Bond Order of atoms i-j (nearest neighb only) - (Eq 3a-3d)
-real(8),allocatable :: BO(:,:,:) 
-
-real(8),allocatable :: delta(:)
-
-!--- Output variables from the BOp_CALC() subroutine:
-real(8),allocatable :: deltap(:,:)
-
-real(8),allocatable :: dln_BOp(:,:,:)
-
-real(8),allocatable :: dBOp(:,:)
-
-!--- A[0123] coefficients for force calculation 
-real(8),allocatable :: A0(:,:),A1(:,:), A2(:,:), A3(:,:) 
 
 !--- Passed between Elnpr and E3body
 real(8),allocatable :: nlp(:), dDlp(:) !Number of Lone Pairs, its derivatives.

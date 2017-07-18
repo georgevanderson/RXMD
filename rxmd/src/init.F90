@@ -1,7 +1,7 @@
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla, mpt)
+SUBROUTINE INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
 use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use atoms; use MemoryAllocator
+use ff_params; use atoms; use bo; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
@@ -11,6 +11,7 @@ type(mpi_var_type),intent(in) :: mpt
 type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
 type(atom_var_type),intent(out) :: avs
+type(bo_var_type),intent(out) :: bos
 type(rxmd_param_type),intent(out) :: rxp
 
 integer :: i,j,k, ity, l(3), ist=0
@@ -97,6 +98,8 @@ call allocatord1d(deltalp,1,NBUFFER)
 
 call ReadBIN(avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
 
+call initialize_bo_vars(bos)
+
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
 call allocatord1d(qtfv,1,NBUFFER)
@@ -139,22 +142,8 @@ call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 
-!--- Bond Order Prime and deriv terms:
-call allocatord3d(dln_BOp,1,3,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(dBOp,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(deltap,1,NBUFFER,1,3)
-
-!--- Bond Order terms
-call allocatord3d(BO,0,3,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord1d(delta,1,NBUFFER)
-call allocatord2d(A0,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A1,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A2,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A3,1,NBUFFER,1,MAXNEIGHBS)
 call allocatord1d(nlp,1,NBUFFER)
 call allocatord1d(dDlp,1,NBUFFER)
-call allocatord1d(ccbnd,1,NBUFFER)
-ccbnd(:)=0.d0
 
 !--- 2 vector QEq varialbes
 call allocatord1d(qs,1,NBUFFER)

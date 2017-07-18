@@ -1,8 +1,59 @@
+module bo
+
+type bo_var_type
+! Bond Order of atoms i-j (nearest neighb only) - (Eq 3a-3d)
+  real(8),allocatable :: BO(:,:,:)
+
+  real(8),allocatable :: delta(:)
+
+!--- Output variables from the BOp_CALC() subroutine:
+  real(8),allocatable :: deltap(:,:)
+
+  real(8),allocatable :: dln_BOp(:,:,:)
+
+  real(8),allocatable :: dBOp(:,:)
+
+!--- A[0123] coefficients for force calculation 
+  real(8),allocatable :: A0(:,:),A1(:,:), A2(:,:), A3(:,:)
+
+!--- coefficient of bonding energy derivative 
+  real(8),allocatable :: ccbnd(:)
+end type
+
+contains
+
 !--------------------------------------------------------------------------------------------
-SUBROUTINE BOCALC(ffp, nlayer, atype, pos)
+subroutine initialize_bo_vars(bos)
+!--------------------------------------------------------------------------------------------
+   use atoms; use MemoryAllocator
+   implicit none
+
+   type(bo_var_type),intent(out) :: bos
+
+   !--- Bond Order terms
+   call allocatord3d(bos%BO,0,3,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord1d(bos%delta,1,NBUFFER)
+   call allocatord2d(bos%A0,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord2d(bos%A1,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord2d(bos%A2,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord2d(bos%A3,1,NBUFFER,1,MAXNEIGHBS)
+
+!--- Bond Order Prime and deriv terms:
+   call allocatord3d(bos%dln_BOp,1,3,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord2d(bos%dBOp,1,NBUFFER,1,MAXNEIGHBS)
+   call allocatord2d(bos%deltap,1,NBUFFER,1,3)
+
+   call allocatord1d(bos%ccbnd,1,NBUFFER)
+   bos%ccbnd(:)=0.d0
+
+end subroutine
+
+!--------------------------------------------------------------------------------------------
+SUBROUTINE BOCALC(bos, ffp, nlayer, atype, pos)
 use ff_params; use atoms
 !--------------------------------------------------------------------------------------------
 
+type(bo_var_type),intent(inout) :: bos
 type(forcefield_params),intent(in) :: ffp
 integer,intent(in) :: nlayer
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
@@ -13,8 +64,9 @@ integer :: ti,tj,tk
 call system_clock(ti,tk)
 !$omp end master
 
-!--- calculate BO prime 
-CALL BOPRIM(ffp)  
+!--- calculate raw bond order. 
+!--- passing bos%deltap since OpenMP complains at the atomic ops in BOPRIM().
+CALL BOPRIM(ffp, bos%deltap)  
 
 !--- calculate full BO
 CALL BOFULL(ffp) 
@@ -27,7 +79,7 @@ it_timer(6)=it_timer(6)+(tj-ti)
 CONTAINS
 
 !--------------------------------------------------------------------------------------------
-SUBROUTINE BOPRIM(ffp)
+SUBROUTINE BOPRIM(ffp, deltap)
 use ff_params; use atoms
 !--------------------------------------------------------------------------------------------
 ! Calculates the BOp(0:3,i,j) and the deltap(i). 
@@ -35,6 +87,7 @@ use ff_params; use atoms
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
+real(8),allocatable :: deltap(:,:)
 
 integer :: n,i,j, j1,i1
 integer :: ity, jty, inxn
@@ -49,7 +102,7 @@ cutoff_vpar30 = cutof2_bo*ffp%vpar30
 !$omp do 
 do i=1, copyptr(6)
    ity = nint(atype(i))
-   deltap(i,1) = -ffp%Val(ity) 
+   bos%deltap(i,1) = -ffp%Val(ity) 
 enddo
 !$omp end do
 
@@ -76,7 +129,7 @@ do i=1, copyptr(6)
           arg_BOpij(2) = ffp%cBOp3(inxn)*dr2**ffp%pbo4h(inxn)
           arg_BOpij(3) = ffp%cBOp5(inxn)*dr2**ffp%pbo6h(inxn)
 
-          bo(1:3,i,j1) = ffp%switch(1:3,inxn)*dexp( arg_BOpij(1:3) )
+          bos%bo(1:3,i,j1) = ffp%switch(1:3,inxn)*dexp( arg_BOpij(1:3) )
 
 !<kn> Small modification exists in sigma-bond prime, see reac.f line 4444. sigma-bond prime is multiplied by
 !<kn> (1.d0 + 1.d-4) here.  Later in original reaxff code, sigma-bond prime is subtracted by 
@@ -84,37 +137,37 @@ do i=1, copyptr(6)
 !<kn> However, this modification is only applied to the energy calculation, not to the force calculation.
 !<kn> The subtraction by <cutoff_vpar30> is done after the derivative calculations so that the variables in the
 !<kn> force-calc routines use the original BOp values and the ones in the energy-calc routines are the modified value. 
-          bo(1,i,j1) = ( 1.d0 + cutoff_vpar30 )*bo(1,i,j1)
+          bos%bo(1,i,j1) = ( 1.d0 + cutoff_vpar30 )*bos%bo(1,i,j1)
 
 !<kn> If the total <BOp> before the subtraction is greater than <cutoff_vpar30>, 
 !<kn> get "final" <BOp> value and its derivatives.
-          if(sum(bo(1:3,i,j1))>cutoff_vpar30 ) then 
+          if(sum(bos%bo(1:3,i,j1))>cutoff_vpar30 ) then 
 
-             dln_BOp(1,i,j1)=ffp%switch(1,inxn)*ffp%pbo2(inxn)*arg_BOpij(1)
-             dln_BOp(2,i,j1)=ffp%switch(2,inxn)*ffp%pbo4(inxn)*arg_BOpij(2)
-             dln_BOp(3,i,j1)=ffp%switch(3,inxn)*ffp%pbo6(inxn)*arg_BOpij(3)
-             dln_BOp(1:3,i,j1) = dln_BOp(1:3,i,j1)/dr2
-             dln_BOp(1:3,j,i1) = dln_BOp(1:3,i,j1)
+             bos%dln_BOp(1,i,j1)=ffp%switch(1,inxn)*ffp%pbo2(inxn)*arg_BOpij(1)
+             bos%dln_BOp(2,i,j1)=ffp%switch(2,inxn)*ffp%pbo4(inxn)*arg_BOpij(2)
+             bos%dln_BOp(3,i,j1)=ffp%switch(3,inxn)*ffp%pbo6(inxn)*arg_BOpij(3)
+             bos%dln_BOp(1:3,i,j1) = bos%dln_BOp(1:3,i,j1)/dr2
+             bos%dln_BOp(1:3,j,i1) = bos%dln_BOp(1:3,i,j1)
 
-             dBOp(i,j1) = sum( bo(1:3,i,j1)*dln_BOp(1:3,i,j1) )
-             dBOp(j,i1) = dBOp(i,j1)
+             bos%dBOp(i,j1) = sum( bos%bo(1:3,i,j1)*bos%dln_BOp(1:3,i,j1) )
+             bos%dBOp(j,i1) = bos%dBOp(i,j1)
           
 !<kn> After the derivative calculations are done, do the subtraction described above 
 !<kn> which results in the difference of bond-order  between the energy-calc and the force-calc.
-             bo(1,i,j1) = bo(1,i,j1) - cutoff_vpar30
+             bos%bo(1,i,j1) = bos%bo(1,i,j1) - cutoff_vpar30
 
-             bo(0,i,j1) = sum( bo(1:3,i,j1) ) 
-             bo(0:3,j,i1) = bo(0:3,i,j1)
+             bos%bo(0,i,j1) = sum( bos%bo(1:3,i,j1) ) 
+             bos%bo(0:3,j,i1) = bos%bo(0:3,i,j1)
 
 !$omp atomic
-             deltap(i,1) = deltap(i,1) + bo(0,i,j1)
+             deltap(i,1) = deltap(i,1) + bos%bo(0,i,j1)
 !$omp atomic
-             deltap(j,1) = deltap(j,1) + bo(0,i,j1)
+             deltap(j,1) = deltap(j,1) + bos%bo(0,i,j1)
           else
-             dBOp(i,j1) = 0.d0
-             dBOp(j,i1) = 0.d0
-             bo(0:3,i,j1) = 0.d0
-             bo(0:3,j,i1) = 0.d0
+             bos%dBOp(i,j1) = 0.d0
+             bos%dBOp(j,i1) = 0.d0
+             bos%bo(0:3,i,j1) = 0.d0
+             bos%bo(0:3,j,i1) = 0.d0
           endif
         endif
 
@@ -158,7 +211,7 @@ real(8) :: exppboc1i,exppboc2i,exppboc1j,exppboc2j   !<kn>
 !$omp do
 do i=1, copyptr(6)
    ity = nint(atype(i))
-   deltap(i,2) = deltap(i,1) + ffp%Val(ity) - ffp%Valboc(ity)
+   bos%deltap(i,2) = bos%deltap(i,1) + ffp%Val(ity) - ffp%Valboc(ity)
 enddo
 !$omp end do
 
@@ -166,8 +219,8 @@ enddo
 do i=1, copyptr(6)
    ity = nint(atype(i))
   
-   exppboc1i = exp( -ffp%vpar1*deltap(i,1) )  !<kn>
-   exppboc2i = exp( -ffp%vpar2*deltap(i,1) )  !<kn>
+   exppboc1i = exp( -ffp%vpar1*bos%deltap(i,1) )  !<kn>
+   exppboc2i = exp( -ffp%vpar2*bos%deltap(i,1) )  !<kn>
 
    do j1=1, nbrlist(i,0)
 
@@ -177,8 +230,8 @@ do i=1, copyptr(6)
 
         jty = nint(atype(j))
 
-        exppboc1j = exp( -ffp%vpar1*deltap(j,1) )  !<kn>
-        exppboc2j = exp( -ffp%vpar2*deltap(j,1) )  !<kn>
+        exppboc1j = exp( -ffp%vpar1*bos%deltap(j,1) )  !<kn>
+        exppboc2j = exp( -ffp%vpar2*bos%deltap(j,1) )  !<kn>
 
         i1 = nbrindx(i,j1)
 
@@ -190,16 +243,16 @@ do i=1, copyptr(6)
         fn23 = fn2 + fn3
 
 !--- keep BOp(0) for later use 
-        BOp0=bo(0,i,j1)
+        BOp0=bos%bo(0,i,j1)
 
 !--- check the over coordination flag <ovc>. If it's zero, fn1 remains as one.
 !--- <ovc> is either 1.d0 or 0.d0 in the given parameter file.
         fn1 = 0.5d0*( ( ffp%Val(ity)+fn2 )/(ffp%Val(ity)+fn23 ) + (ffp%Val(jty)+fn2)/(ffp%Val(jty)+fn23) )
         if(ffp%ovc(inxn) < 1.d-3) fn1 = 1.d0
 
-        BOpsqr = bo(0,i,j1)*bo(0,i,j1)
-        fn4 = 1.d0/(1.d0 +  dexp(-ffp%pboc3(inxn) * (ffp%pboc4(inxn) * BOpsqr - deltap(i,2) ) + ffp%pboc5(inxn) ) )
-        fn5 = 1.d0/(1.d0 +  dexp(-ffp%pboc3(inxn) * (ffp%pboc4(inxn) * BOpsqr - deltap(j,2) ) + ffp%pboc5(inxn) ) )
+        BOpsqr = bos%bo(0,i,j1)*bos%bo(0,i,j1)
+        fn4 = 1.d0/(1.d0 +  dexp(-ffp%pboc3(inxn) * (ffp%pboc4(inxn) * BOpsqr - bos%deltap(i,2) ) + ffp%pboc5(inxn) ) )
+        fn5 = 1.d0/(1.d0 +  dexp(-ffp%pboc3(inxn) * (ffp%pboc4(inxn) * BOpsqr - bos%deltap(j,2) ) + ffp%pboc5(inxn) ) )
 
 !--- Corresponding to <ovc>, <v13cor> is a flag to modify <fn4> and <fn5>.
 !--- Currently (3/1/05) only Al-Al interaction satisfies this condition, which gives no-correction to 
@@ -214,17 +267,17 @@ do i=1, copyptr(6)
         fn1145 = fn1*fn145
 
 !--- New Bond-Order definition
-        BO(0,i,j1) = bo(0,i,j1) * fn145
-        BO(2,i,j1) = bo(2,i,j1) * fn1145
-        BO(3,i,j1) = bo(3,i,j1) * fn1145
-        if(BO(0,i,j1) < 1.d-10) BO(0,i,j1) = 0.d0
-        if(BO(2,i,j1) < 1.d-10) BO(2,i,j1) = 0.d0
-        if(BO(3,i,j1) < 1.d-10) BO(3,i,j1) = 0.d0
+        bos%BO(0,i,j1) = bos%bo(0,i,j1) * fn145
+        bos%BO(2,i,j1) = bos%bo(2,i,j1) * fn1145
+        bos%BO(3,i,j1) = bos%bo(3,i,j1) * fn1145
+        if(bos%BO(0,i,j1) < 1.d-10) bos%BO(0,i,j1) = 0.d0
+        if(bos%BO(2,i,j1) < 1.d-10) bos%BO(2,i,j1) = 0.d0
+        if(bos%BO(3,i,j1) < 1.d-10) bos%BO(3,i,j1) = 0.d0
 
 !--- new sigma BO definition.
-        BO(1,i,j1) = BO(0,i,j1) - BO(2,i,j1) - BO(3,i,j1) 
+        bos%BO(1,i,j1) = bos%BO(0,i,j1) - bos%BO(2,i,j1) - bos%BO(3,i,j1) 
 
-        BO(0:3,j,i1) = BO(0:3,i,j1)
+        bos%BO(0:3,j,i1) = bos%BO(0:3,i,j1)
  
 !--- CALCULATION OF DERIVATIVE OF BOND ORDER
 !--- all following comes from Coding Methodology section:
@@ -249,8 +302,8 @@ do i=1, copyptr(6)
         pboc34 = ffp%pboc3(inxn) * ffp%pboc4(inxn)  !consider array calcd outside
         BOpij_2 = BOpsqr
 
-        u45ij = ffp%pboc5(inxn) + ffp%pboc3(inxn)*deltap(i,2) - pboc34*BOpij_2
-        u45ji = ffp%pboc5(inxn) + ffp%pboc3(inxn)*deltap(j,2) - pboc34*BOpij_2
+        u45ij = ffp%pboc5(inxn) + ffp%pboc3(inxn)*bos%deltap(i,2) - pboc34*BOpij_2
+        u45ji = ffp%pboc5(inxn) + ffp%pboc3(inxn)*bos%deltap(j,2) - pboc34*BOpij_2
 
 !--- part 5:
         exph_45ij = exp(u45ij)
@@ -280,15 +333,15 @@ do i=1, copyptr(6)
         Cf1ij_div1 = Cf1ij/fn1
         Cf1ji_div1 = Cf1ji/fn1
 
-        A0(i,j1) = fn145
-        A1(i,j1) = -2d0*pboc34*BOp0*(Cf45ij + Cf45ji)*fn45_inv
-        A2(i,j1) = Cf1ij_div1 + (ffp%pboc3(inxn)*Cf45ij*fn45_inv)
-        A3(i,j1) = A2(i,j1) + Cf1ij_div1
+        bos%A0(i,j1) = fn145
+        bos%A1(i,j1) = -2d0*pboc34*BOp0*(Cf45ij + Cf45ji)*fn45_inv
+        bos%A2(i,j1) = Cf1ij_div1 + (ffp%pboc3(inxn)*Cf45ij*fn45_inv)
+        bos%A3(i,j1) = bos%A2(i,j1) + Cf1ij_div1
 
-        A0(j,i1) = A0(i,j1)
-        A1(j,i1) = A1(i,j1)
-        A2(j,i1) = Cf1ji_div1 + (ffp%pboc3(inxn)*Cf45ji*fn45_inv)
-        A3(j,i1) = A2(j,i1) + Cf1ji_div1     
+        bos%A0(j,i1) = bos%A0(i,j1)
+        bos%A1(j,i1) = bos%A1(i,j1)
+        bos%A2(j,i1) = Cf1ji_div1 + (ffp%pboc3(inxn)*Cf45ji*fn45_inv)
+        bos%A3(j,i1) = bos%A2(j,i1) + Cf1ji_div1     
 
       endif !if(i<j)
 
@@ -301,10 +354,12 @@ enddo
 !$omp do
 do i=1, copyptr(6)
    ity = nint(atype(i))
-   delta(i) = -ffp%Val(ity) + sum( BO(0,i,1:nbrlist(i,0)) )
+   bos%delta(i) = -ffp%Val(ity) + sum( bos%BO(0,i,1:nbrlist(i,0)) )
 enddo
 !$omp end do
 
 END SUBROUTINE
 
 END SUBROUTINE BOCALC
+
+end module

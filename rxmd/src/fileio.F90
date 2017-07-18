@@ -1,10 +1,11 @@
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(ffp, avs, rxp, mpt, fileNameBase)
-use atom_vars; use atoms; use ff_params; use mpi_vars; use rxmd_params
+subroutine OUTPUT(ffp, avs, bos, rxp, mpt, fileNameBase)
+use atom_vars; use atoms; use ff_params; use mpi_vars; use rxmd_params; use bo
 !----------------------------------------------------------------------------------------
 implicit none
 
 type(atom_var_type),intent(in) :: avs 
+type(bo_var_type),intent(in) :: bos
 type(forcefield_params),intent(in) :: ffp
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
@@ -15,7 +16,7 @@ if(rxp%isBinary) then
   call WriteBIN(avs, rxp, mpt, fileNameBase)
 endif
 
-if(rxp%isBondFile) call WriteBND(avs, mpt, fileNameBase)
+if(rxp%isBondFile) call WriteBND(avs, bos, mpt, fileNameBase)
 if(rxp%isPDB) call WritePDB(ffp, avs, mpt, fileNameBase)
 
 return
@@ -23,12 +24,13 @@ return
 Contains 
 
 !--------------------------------------------------------------------------
-subroutine WriteBND(avs, mpt, fileNameBase)
-use mpi_vars
+subroutine WriteBND(avs, bos, mpt, fileNameBase)
+use mpi_vars; use bo
 !--------------------------------------------------------------------------
 implicit none
 
 type(atom_var_type),intent(in) :: avs 
+type(bo_var_type),intent(in) :: bos
 type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
@@ -59,7 +61,7 @@ m=0
 do i=1, NATOMS
    do j1 = 1, nbrlist(i,0)
 !--- don't count if BO is less than BNDcutoff.
-       if(BO(0,i,j1) > BNDcutoff) then 
+       if(bos%BO(0,i,j1) > BNDcutoff) then 
            m=m+1
        endif
    enddo
@@ -115,11 +117,11 @@ do i=1, NATOMS
       jgd = l2g(avs%atype(j))
 
 !--- if bond order is less than 0.3, ignore the bond.
-      if( BO(0,i,j1) < 0.3d0) cycle
+      if( bos%BO(0,i,j1) < 0.3d0 ) cycle
 
       bndlist(0) = bndlist(0) + 1
       bndlist(bndlist(0)) = jgd
-      bndordr(bndlist(0)) = BO(0,i,j1)
+      bndordr(bndlist(0)) = bos%BO(0,i,j1)
    enddo
 
    BNDOneLine=""

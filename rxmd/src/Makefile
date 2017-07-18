@@ -12,9 +12,9 @@ $(EXE): $(OBJS)
 main.F90 : module.o cg.o
 
 bo.o : module.o
-fileio.o : module.o
+fileio.o : module.o bo.o
 init.o : param.o module.o
-pot.o : param.o module.o 
+pot.o : param.o module.o bo.o
 qeq.o : module.o
 stress.o : module.o
 cg.o : module.o
