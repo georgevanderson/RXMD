@@ -353,7 +353,7 @@ do i=1, 3
 do j=1, 3
    HH(i,j,0)=mat(i,j)
 enddo; enddo
-call UpdateBoxParams()
+call UpdateBoxParams(rxp)
 
 call xs2xu(rnorm,avs%pos,NATOMS)
 
