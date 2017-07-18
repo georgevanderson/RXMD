@@ -194,14 +194,6 @@ real(8) :: lata,latb,latc,lalpha,lbeta,lgamma
 
 integer :: ierr, myparity(3), vID(3)
 
-!<sbuffer> send buffer, <rbuffer> receive buffer
-real(8),allocatable :: sbuffer(:), rbuffer(:)
-   
-!<ns> # of atoms to be sent, <nr> # of atoms to be received, <na> # of all of transfered atoms.
-!<ne> # of elements for one atom.
-!     Example) In case atom type, position and velocity to be sent,  ne = 1+3+3 = 7
-integer :: ns, nr, na, ne
-
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
 integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = 3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5, MODE_STRESSCALC = 6
@@ -223,10 +215,6 @@ integer,parameter :: MAXLAYERS_NB=10
 ! if targe_node(i)==-1, the node doesn't have a partner in i-direction.
 integer :: target_node(6)
 
-
-!<mc(3)> # of unit cells in each directions
-integer :: mc(3)
-
 real(8),allocatable:: rc(:), rc2(:)   !<RCUT>: cutoff length for sigma-bonding.
 real(8),allocatable:: rcpi(:), rcpp(:)!      : cutoff length for other bonding.
 
@@ -242,9 +230,6 @@ integer,parameter :: is_idEh = 1
 !real(8),parameter :: cutof2_esub = 0.d0
 !real(8),parameter :: cutof2_bo = 1d-4
 !integer,parameter :: is_idEh = 0
-
-! cutoff_vpar30 = cutof2_bo*vpar30, used in BOPRIM()
-real(8) :: cutoff_vpar30
 
 !integer :: NBUFFER=5000
 !integer,parameter :: MAXNEIGHBS=50  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
@@ -318,10 +303,6 @@ real(8),allocatable :: deltalp(:)
 real(8) :: TE, KE, PE(0:13)
 real(8) :: GTE, GKE, GPE(0:13)
 
-!--- one vector charge equlibration
-! g: gradient,  h: conjugate direction, hsh: hessian * h
-!real(8),allocatable :: g(:), h(:), hsh(:)
-
 ! Two vectors electrostatic energy minimization 
 real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
 
@@ -332,15 +313,12 @@ real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:)
 real(8),allocatable :: hessian(:,:)
 real(8) :: Lex_w=1.d0, Lex_w2=1.d0
  
-integer :: ast ! Allocation STatus of allocatable variables.
-
 ! <lcsize> Linked list Cell SIZE. <cc> Nr of likedlist cell in local node.
 real(8) :: lcsize(3), nblcsize(3)
 integer :: cc(3), nbcc(3)
 
 integer :: nmesh, nbnmesh
 integer,allocatable :: mesh(:,:), nbmesh(:,:)
-
 
 !--- Unit convetors. In original ReaxFF program, the units of length is [A]
 !--- energy is [kcal/mol] and mass is [amu] respectively.
@@ -380,8 +358,6 @@ integer :: it_timer(Ntimer)=0, it_timer_max(Ntimer)=0, it_timer_min(Ntimer)=0
 ! <nstep> current MD step, 
 ! <current_step> will be used for subsequent runs.
 integer :: nstep=0, current_step
-
-real(8) :: dmt
 
 !--- <frcindx> FoRCe INDeX. Index to return calculated force to original atoms.
 integer,allocatable :: frcindx(:)

@@ -41,6 +41,15 @@ integer :: ni, ity
 
 integer :: ti,tj,tk,tti,ttj
 
+! buffers for MPI_Send&Recv in send_recv()
+real(8),allocatable :: sbuffer(:), rbuffer(:)
+
+! ns&nr, # of atoms to be sent & recv
+! na, total number of elements of the buffers
+! ne, # of data element per atom. 
+!    For example, if type + position + velocity are sent, ne is 7 (1+3+3). 
+integer :: ns, nr, na, ne
+
 integer,parameter :: dinv(6)=(/2,1,4,3,6,5/)
 
 call system_clock(tti,tk)

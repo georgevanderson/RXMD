@@ -326,15 +326,12 @@ type(forcefield_params),intent(in) :: ffp
 integer :: ity,jty,inxn
 real(8) :: dr,BOsig
 
-!--- cutoff_vpar30 = cutof2_bo*vpar30, used in BOPRIM()
-cutoff_vpar30 = cutof2_bo*ffp%vpar30
-
 !--- get the cutoff length based on sigma bonding interaction.
 
 ! --- Remark --- 
 ! sigma bond before correction is the longest, namely longer than than pi and double-pi bonds
 ! thus check only sigma bond convergence.
-allocate(rc(ffp%nboty), rc2(ffp%nboty), stat=ast)
+allocate(rc(ffp%nboty), rc2(ffp%nboty))
 
 rc(:)=0.d0; rc2(:)=0.d0
 do ity=1,ffp%nso

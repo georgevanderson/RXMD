@@ -41,6 +41,10 @@ integer :: ity, jty, inxn
 integer :: c1,c2,c3
 real(8) :: dr(3), dr2, arg_BOpij(3)
 
+!--- cutoff_vpar30 = cutof2_bo*vpar30, used in BOPRIM()
+real(8) :: cutoff_vpar30
+cutoff_vpar30 = cutof2_bo*ffp%vpar30
+
 !--- initialize deltap(1:,1) to -Val(atype(i))
 !$omp do 
 do i=1, copyptr(6)
