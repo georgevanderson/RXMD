@@ -13,12 +13,11 @@ type(rxmd_param_type) :: rxp
 type(cmdline_arg_type) :: cla
 type(mpi_var_type) :: mpt
 
-!if(mpt%myid==0)  print'(a30)', 'rxmd has started'
-print'(a30)', 'rxmd has started'
-
 call GetCmdLineArgs(cla)
 
 call GetMPIVariables(mpt)
+
+if(mpt%myid==0)  print'(a30)', 'rxmd has started'
 
 !--- read ffield file
 CALL GETPARAMS(ffp, cla%FFPath, FFDescript)

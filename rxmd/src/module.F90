@@ -287,9 +287,6 @@ real(8),allocatable :: dln_BOp(:,:,:)
 
 real(8),allocatable :: dBOp(:,:)
 
-!--- For NEW DBO calc:
-real(8),allocatable :: exp_delt1(:,:), exp_delt2(:,:)  ! exp( -pboc#(inxn) * deltap(i,1) ) - {inxn, i}   
-
 !--- A[0123] coefficients for force calculation 
 real(8),allocatable :: A0(:,:),A1(:,:), A2(:,:), A3(:,:) 
 
