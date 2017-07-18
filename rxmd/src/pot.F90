@@ -1,12 +1,12 @@
 !----------------------------------------------------------------------------------------------------------------------
 subroutine FORCE(ffp, mpt, atype, pos, f, q)
-use base; use mpi_vars; use parameters; use atoms 
+use atom_vars; use mpi_vars; use parameters; use atoms 
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt
-type(atom_vars) :: avs 
+type(atom_var_type) :: avs 
 
 real(8),intent(inout) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(inout) :: pos(NBUFFER,3)

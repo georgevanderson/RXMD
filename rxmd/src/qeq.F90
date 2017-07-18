@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
 subroutine QEq(ffp, avs, mpt, rxp)
-use base; use atoms; use rxmd_params; use mpi_vars; use parameters; use mpi_vars
+use atom_vars; use atoms; use rxmd_params; use mpi_vars; use parameters; use mpi_vars
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -13,7 +13,7 @@ use base; use atoms; use rxmd_params; use mpi_vars; use parameters; use mpi_vars
 implicit none
 
 type(forcefield_params),intent(in) :: ffp
-type(atom_vars),intent(inout) ::avs 
+type(atom_var_type),intent(inout) ::avs 
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
 

@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------
 program rxmd
-use base; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
+use atom_vars; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
 use parameters; use CG
 !------------------------------------------------------------------------------
 implicit none
@@ -8,7 +8,7 @@ integer :: i,it1,it2,irt,provided
 real(8) :: ctmp, dr(3)
 
 type(forcefield_params) :: ffp
-type(atom_vars) :: avs
+type(atom_var_type) :: avs
 type(rxmd_param_type) :: rxp
 type(cmdline_arg_type) :: cla
 type(mpi_var_type) :: mpt
@@ -99,7 +99,7 @@ end PROGRAM
 
 !------------------------------------------------------------------------------
 subroutine SaveRunProfileData(fd, MDstep)
-use base; use atoms
+use atom_vars; use atoms
 !------------------------------------------------------------------------------
 implicit none
 integer :: i, fd, MDstep

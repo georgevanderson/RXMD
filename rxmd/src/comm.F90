@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------------------
 subroutine COPYATOMS(avs, mpt, imode, dr)
-use atoms; use base; use mpi_vars
+use atoms; use atom_vars; use mpi_vars
 !
 ! TODO: update notes here
 !
@@ -31,7 +31,7 @@ implicit none
 integer,intent(IN) :: imode 
 real(8),intent(IN) :: dr(3)
 
-type(atom_vars) :: avs
+type(atom_var_type) :: avs
 type(mpi_var_type),intent(in) :: mpt
 
 real(8) :: rnorm(NBUFFER,3) ! <- normalized coordinate
@@ -207,7 +207,7 @@ end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine store_atoms(avs, mpt, tn, dflag, imode, dr)
-use atoms; use base; use mpi_vars
+use atoms; use atom_vars; use mpi_vars
 ! <nlayer> will be used as a flag to change the behavior of this subroutine. 
 !    <nlayer>==0 migration mode
 !            > 0 copy mode
@@ -215,7 +215,7 @@ use atoms; use base; use mpi_vars
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 
-type(atom_vars) :: avs
+type(atom_var_type) :: avs
 type(mpi_var_type) :: mpt
 
 integer,intent(IN) :: tn, dflag, imode 
@@ -338,13 +338,13 @@ end subroutine store_atoms
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine append_atoms(avs, mpt, dflag, imode)
-use atoms; use base; use mpi_vars
+use atoms; use atom_vars; use mpi_vars
 ! <append_atoms> append copied information into arrays
 ! shared variables::  <ns>, <nr>, <na>, <ne>, <sbuffer()>, <rbuffer()>
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 
-type(atom_vars) :: avs
+type(atom_var_type) :: avs
 type(mpi_var_type),intent(in) :: mpt
 integer,intent(IN) :: dflag, imode 
 integer :: m, i, ine

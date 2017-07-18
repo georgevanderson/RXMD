@@ -1,6 +1,6 @@
 !------------------------------------------------------------------------------------------
 SUBROUTINE INITSYSTEM(ffp, avs, rxp, cla, mpt)
-use base; use rxmd_params; use cmdline_args; use mpi_vars
+use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
 use parameters; use atoms; use MemoryAllocator
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
@@ -10,7 +10,7 @@ implicit none
 type(mpi_var_type),intent(in) :: mpt
 type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
-type(atom_vars),intent(out) :: avs
+type(atom_var_type),intent(out) :: avs
 type(rxmd_param_type),intent(out) :: rxp
 
 integer :: i,j,k, ity, l(3), ist=0

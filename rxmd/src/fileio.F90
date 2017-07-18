@@ -1,10 +1,10 @@
 !----------------------------------------------------------------------------------------
 subroutine OUTPUT(ffp, avs, rxp, mpt, fileNameBase)
-use base; use atoms; use parameters; use mpi_vars; use rxmd_params
+use atom_vars; use atoms; use parameters; use mpi_vars; use rxmd_params
 !----------------------------------------------------------------------------------------
 implicit none
 
-type(atom_vars),intent(in) :: avs 
+type(atom_var_type),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
@@ -28,7 +28,7 @@ use mpi_vars
 !--------------------------------------------------------------------------
 implicit none
 
-type(atom_vars),intent(in) :: avs 
+type(atom_var_type),intent(in) :: avs 
 type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
@@ -155,7 +155,7 @@ use parameters;  use mpi_vars
 !--------------------------------------------------------------------------
 implicit none
 
-type(atom_vars),intent(in) :: avs 
+type(atom_var_type),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
@@ -249,13 +249,13 @@ end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
 subroutine ReadBIN(avs, mpt, fileName)
-use base; use atoms; use mpi_vars; use MemoryAllocator
+use atom_vars; use atoms; use mpi_vars; use MemoryAllocator
 !--------------------------------------------------------------------------
 implicit none
 
 character(*),intent(in) :: fileName
 type(mpi_var_type),intent(out) :: mpt
-type(atom_vars),intent(out) :: avs 
+type(atom_var_type),intent(out) :: avs 
 
 integer :: i,i1
 
@@ -363,11 +363,11 @@ end
 
 !--------------------------------------------------------------------------
 subroutine WriteBIN(avs, rxp, mpt, fileNameBase)
-use base; use rxmd_params; use mpi_vars; use atoms
+use atom_vars; use rxmd_params; use mpi_vars; use atoms
 !--------------------------------------------------------------------------
 implicit none
 
-type(atom_vars),intent(in) :: avs 
+type(atom_var_type),intent(in) :: avs 
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
 

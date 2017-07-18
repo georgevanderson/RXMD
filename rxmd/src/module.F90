@@ -1,11 +1,11 @@
 !-------------------------------------------------------------------------------------------
-module base
+module atom_vars
 !-------------------------------------------------------------------------------------------
 ! position, atom type, velocity, force & charge
-type atom_vars
+type atom_var_type
   real(8),allocatable,dimension(:) :: atype, q
   real(8),allocatable,dimension(:,:) :: pos, v, f
-end type atom_vars
+end type atom_var_type
 
 end module
 !-------------------------------------------------------------------------------------------
