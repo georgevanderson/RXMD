@@ -29,7 +29,7 @@ CALL INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
 if(rxp%mdmode==10) call ConjugateGradient(avs%atype, avs%pos, cla, mpt, rxp%ftol)
 
 call QEq(ffp, avs, mpt, rxp)
-call FORCE(ffp, mpt, bos, avs%atype, avs%pos, avs%f, avs%q)
+call FORCE(ffp, mpt, bos, avs)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
@@ -73,7 +73,7 @@ do nstep=0, rxp%ntime_step-1
    call COPYATOMS(avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
    
    if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp)
-   call FORCE(ffp, mpt, bos, avs%atype, avs%pos, avs%f, avs%q)
+   call FORCE(ffp, mpt, bos, avs)
 
 !--- update velocity
    call vkick(1.d0, avs%atype, avs%v, avs%f) 
