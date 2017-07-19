@@ -20,10 +20,6 @@ real(8) :: mm, gmm, dns, mat(3,3)
 integer(8) :: i8
 real(8) :: rcsize(3), maxrcell
 
-!--- summary file keeps potential energies, box parameters during MD simulation
-!--- intended to be used for validation of code change. 
-if(cla%saveRunProfile) open(RunProfileFD, file=RunProfilePath, status='unknown')
-
 call GetRxmdParams(rxp, cla%ParmPath)
 
 !--- an error trap

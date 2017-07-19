@@ -40,7 +40,6 @@ do nstep=0, rxp%ntime_step-1
 
    if(mod(nstep, rxp%pstep)==0) then
        call PRINTE(mpt, rxp%pstep, avs%atype, avs%v, avs%q)
-       if(cla%saveRunProfile) call SaveRunProfileData(RunProfileFD, nstep)
    endif
    if(mod(nstep, rxp%fstep)==0) &
         call OUTPUT(ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
@@ -94,50 +93,22 @@ if(rxp%isBinary) call WriteBIN(avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
 call system_clock(it2,irt)
 it_timer(Ntimer)=(it2-it1)
 
-call FinalizeMD(mpt%myid, cla%saveRunProfile, irt)
+call FinalizeMD(mpt%myid, irt)
 
 call MPI_FINALIZE(ierr)
 end PROGRAM
 
 !------------------------------------------------------------------------------
-subroutine SaveRunProfileData(fd, MDstep)
-use atom_vars; use atoms
-!------------------------------------------------------------------------------
-implicit none
-integer :: i, fd, MDstep
-
-write(fd,'(i9,a3)') MDstep," : " 
-
-do i=1,3
-   write(fd,'(3es16.8)') HH(1:3,i,0)
-enddo
-
-write(fd,'(14es16.8)') GPE(0:13)
-
-!do i=1, NATOMS
-!   write(fd,'(es25.13,9f15.5)') atype(i),pos(1:3,i),v(1:3,i),f(1:3,i)
-!enddo
-
-write(fd,*) 
-write(fd,*) 
-
-end subroutine
-
-!------------------------------------------------------------------------------
-subroutine FinalizeMD(myid, saveRunProfile, irt)
+subroutine FinalizeMD(myid, irt)
 use atoms; use MemoryAllocator; use mpi_vars
 !------------------------------------------------------------------------------
 implicit none
 
 integer,intent(in) :: myid
-logical,intent(in) :: saveRunProfile
 integer,intent(in) :: irt ! time resolution
 integer,allocatable :: ibuf(:),ibuf1(:)
 
 integer :: i
-
-!--- close summary file
-if(saveRunProfile) close(RunProfileFd)
 
 allocate(ibuf(nmaxas),ibuf1(nmaxas))
 ibuf(:)=0

@@ -67,7 +67,6 @@ integer,parameter :: MAXPATHLENGTH=256
 
 type cmdline_arg_type
 
-  logical :: saveRunProfile=.false.
   logical :: isFF=.false., isData=.false., isMDparm=.false.
   character(MAXPATHLENGTH) :: FFPath="ffield", DataDir="DAT", ParmPath="rxmd.in"
 
@@ -98,8 +97,6 @@ do i=1, command_argument_count()
      case("--rxmdin", "-in")
        call get_command_argument(i+1,argv)
        cla%ParmPath=adjustl(argv)
-     case("--profile")
-       cla%saveRunProfile=.true.
      case default
    end select
 
@@ -197,9 +194,6 @@ module atoms
 !-------------------------------------------------------------------------------------------
 
 integer,parameter :: MAXPATHLENGTH=256
-
-character(MAXPATHLENGTH) :: RunProfilePath="profile.dat"
-integer,parameter :: RunProfileFD=30 ! file descriptor for summary file
 
 !--- For array size statistics
 !  1-NATOMS, 2-nbrlist, 3-nbrlist for qeq, 4-NBUFFER for move, 5-NBUFFER for copy
