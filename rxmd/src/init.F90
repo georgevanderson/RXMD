@@ -1,7 +1,8 @@
 !------------------------------------------------------------------------------------------
 SUBROUTINE INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
 use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use atoms; use bo; use MemoryAllocator
+use ff_params; use atoms; use bo; use energy_terms; use MemoryAllocator
+use qeq_terms
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
@@ -88,17 +89,12 @@ do ity=1,ffp%nso
    hmas(ity) = 0.5d0*ffp%mass(ity)
 enddo
 
-call allocatord1d(avs%atype,1,NBUFFER)
-call allocatord1d(avs%q,1,NBUFFER)
-call allocatord2d(avs%pos,1,NBUFFER,1,3)
-call allocatord2d(avs%v,1,NBUFFER,1,3)
-call allocatord2d(avs%f,1,NBUFFER,1,3)
-
-call allocatord1d(deltalp,1,NBUFFER)
-
+call initialize_atom_vars(avs, NBUFFER)
 call ReadBIN(avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
 
 call initialize_bo_vars(bos)
+call initialize_energy_terms(NBUFFER)
+call initialize_qeq_terms(NBUFFER, MAXNEIGHBS10)
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)
@@ -142,20 +138,6 @@ call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 
-call allocatord1d(nlp,1,NBUFFER)
-call allocatord1d(dDlp,1,NBUFFER)
-
-!--- 2 vector QEq varialbes
-call allocatord1d(qs,1,NBUFFER)
-call allocatord1d(gs,1,NBUFFER)
-call allocatord1d(qt,1,NBUFFER)
-call allocatord1d(gt,1,NBUFFER)
-call allocatord1d(hs,1,NBUFFER)
-call allocatord1d(hshs,1,NBUFFER)
-call allocatord1d(ht,1,NBUFFER)
-call allocatord1d(hsht,1,NBUFFER)
-call allocatord2d(hessian,1,MAXNEIGHBS10,1,NBUFFER)
-qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
 
 !--- returning force index array 
 call allocatori1d(frcindx,1,NBUFFER)

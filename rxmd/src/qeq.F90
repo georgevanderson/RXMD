@@ -1,3 +1,38 @@
+module qeq_terms
+
+! Two vectors electrostatic energy minimization 
+real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
+
+!--- variables for extended Lagrangian method ---
+!<Lex_fqs> fraction between two QEq vectors
+!<Lex_w> spring constant
+real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:)
+real(8),allocatable :: hessian(:,:)
+real(8) :: Lex_w=1.d0, Lex_w2=1.d0
+
+contains 
+
+!------------------------------------------------------------------------------
+subroutine initialize_qeq_terms(NBUFFER, MAXNEIGHBS10)
+use MemoryAllocator
+!------------------------------------------------------------------------------
+implicit none
+integer,intent(in) :: NBUFFER, MAXNEIGHBS10
+
+!--- 2 vector QEq varialbes
+call allocatord1d(qs,1,NBUFFER)
+call allocatord1d(gs,1,NBUFFER)
+call allocatord1d(qt,1,NBUFFER)
+call allocatord1d(gt,1,NBUFFER)
+call allocatord1d(hs,1,NBUFFER)
+call allocatord1d(hshs,1,NBUFFER)
+call allocatord1d(ht,1,NBUFFER)
+call allocatord1d(hsht,1,NBUFFER)
+call allocatord2d(hessian,1,MAXNEIGHBS10,1,NBUFFER)
+qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
+
+end subroutine
+
 !------------------------------------------------------------------------------
 subroutine QEq(ffp, avs, mpt, rxp)
 use atom_vars; use atoms; use rxmd_params; use mpi_vars; use ff_params; use mpi_vars
@@ -195,7 +230,6 @@ integer :: ti,tj,tk
 
 call system_clock(ti,tk)
 
-
 nbplist(:,0) = 0
 
 !$omp parallel do schedule(runtime), default(shared), &
@@ -349,3 +383,5 @@ it_timer(19)=it_timer(19)+(tj-ti)
 end subroutine
 
 end subroutine QEq
+
+end module

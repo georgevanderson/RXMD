@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------------------
 subroutine COPYATOMS(avs, mpt, imode, dr)
-use atoms; use atom_vars; use mpi_vars
+use atoms; use atom_vars; use mpi_vars; use qeq_terms
 !
 ! TODO: update notes here
 !

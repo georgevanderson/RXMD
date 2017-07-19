@@ -7,6 +7,24 @@ type atom_var_type
   real(8),allocatable,dimension(:,:) :: pos, v, f
 end type atom_var_type
 
+contains
+
+!-------------------------------------------------------------------------------------------
+subroutine initialize_atom_vars(avs, NBUFFER)
+use MemoryAllocator
+!-------------------------------------------------------------------------------------------
+implicit none
+type(atom_var_type),intent(out) :: avs
+integer,intent(in) :: NBUFFER
+
+call allocatord1d(avs%atype,1,NBUFFER)
+call allocatord1d(avs%q,1,NBUFFER)
+call allocatord2d(avs%pos,1,NBUFFER,1,3)
+call allocatord2d(avs%v,1,NBUFFER,1,3)
+call allocatord2d(avs%f,1,NBUFFER,1,3)
+
+end subroutine
+
 end module
 !-------------------------------------------------------------------------------------------
 
@@ -189,9 +207,6 @@ integer,parameter :: RunProfileFD=30 ! file descriptor for summary file
 integer,parameter :: nmaxas=5
 integer,allocatable :: maxas(:,:)
 
-!--- lattice parameters 
-real(8) :: lata,latb,latc,lalpha,lbeta,lgamma
-
 integer :: ierr, myparity(3), vID(3)
 
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
@@ -240,8 +255,6 @@ integer,parameter :: MAXNEIGHBS=30  !<MAXNEIGHBS>: Max # of Ngbs one atom may ha
 integer,parameter :: MAXNEIGHBS10=700 !<MAXNEIGHBS>: Max # of Ngbs within 10[A]. 
 
 integer,parameter :: NMINCELL=3  !<NMINCELL>: Nr of minimum linkedlist cell <-> minimum grain size.
-real(8),parameter :: MAXANGLE= 0.999999999999d0 
-real(8),parameter :: MINANGLE=-0.999999999999d0
 real(8),parameter :: NSMALL = 1.d-10
 real(8) :: maxrc                        !<maxRCUT>: Max cutoff length. used to decide lcsize.
 
@@ -250,6 +263,9 @@ real(8),parameter :: pi=3.14159265358979d0
 ! atomic stress tensor
 real(8),allocatable :: astr(:,:) 
 real(8) :: pint(3,3)
+
+!--- lattice parameters 
+real(8) :: lata,latb,latc,lalpha,lbeta,lgamma
 
 real(8) :: HH(3,3,0:1), HHi(3,3), MDBOX, LBOX(0:3), OBOX(1:3) !MD box, local MD box, origin of box.
 integer :: NATOMS         !local # of atoms
@@ -272,26 +288,12 @@ integer,allocatable :: nbrlist(:,:), nbrindx(:,:)
 !<nbplist> neighbor list of nonbonding interaction, non-bonding pair list
 integer,allocatable :: nbplist(:,:)
 
-!--- Passed between Elnpr and E3body
-real(8),allocatable :: nlp(:), dDlp(:) !Number of Lone Pairs, its derivatives.
-real(8),allocatable :: deltalp(:)
-
 ! TE: Total Energy,  KE: Kinetic Energy,  PE :: Potential Energies
 !  0-Esystem, 1-Ebond, 2-Elp, 3-Eover, 4-Eunder, 5-Eval, 6-Epen
 !  7-Ecoa,  8-Etors, 9-Econj, 10-Ehbond, 11-Evdwaals, 12-Ecoulomb 13-Echarge
 real(8) :: TE, KE, PE(0:13)
 real(8) :: GTE, GKE, GPE(0:13)
 
-! Two vectors electrostatic energy minimization 
-real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
-
-!--- variables for extended Lagrangian method ---
-!<Lex_fqs> fraction between two QEq vectors
-!<Lex_w> spring constant
-real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:) 
-real(8),allocatable :: hessian(:,:)
-real(8) :: Lex_w=1.d0, Lex_w2=1.d0
- 
 ! <lcsize> Linked list Cell SIZE. <cc> Nr of likedlist cell in local node.
 real(8) :: lcsize(3), nblcsize(3)
 integer :: cc(3), nbcc(3)
@@ -394,176 +396,4 @@ end function
 
 end module atoms
 
-!-------------------------------------------------------------------------------------------
-
-!-------------------------------------------------------------------------------------------
-module MemoryAllocator
-!-------------------------------------------------------------------------------------------
-implicit none
-integer :: totalMemory=0
-
-contains 
-
-subroutine AllocatorD1D(array, imin, imax)
-  implicit none
-  integer,intent(in) :: imin, imax
-  real(8),allocatable,dimension(:) :: array
-  integer :: status
-  
-  allocate(array(imin:imax), stat=status)
-  totalMemory = totalMemory + size(array)*8
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD1D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine 
-
-subroutine DeallocatorD1D(array)
-  implicit none
-  real(8),allocatable,dimension(:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*8
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorD1D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-subroutine AllocatorD2D(array, imin1, imax1, imin2, imax2) 
-  implicit none
-  integer,intent(in) :: imin1, imax1, imin2, imax2
-  real(8),allocatable,dimension(:,:) :: array
-  integer :: status
-  
-  allocate(array(imin1:imax1,imin2:imax2), stat=status)
-  totalMemory = totalMemory + size(array)*8
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD2D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine
-
-subroutine DeallocatorD2D(array) 
-  implicit none
-  real(8),allocatable,dimension(:,:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*8
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorD2D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-subroutine AllocatorD3D(array, imin1, imax1, imin2, imax2, imin3, imax3) 
-  implicit none
-  integer,intent(in) :: imin1, imax1, imin2, imax2, imin3, imax3
-  real(8),allocatable,dimension(:,:,:) :: array
-  integer :: status
-  
-  allocate(array(imin1:imax1,imin2:imax2,imin3:imax3), stat=status)
-  totalMemory = totalMemory + size(array)*8
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD3D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine
-
-subroutine DeallocatorD3D(array) 
-  implicit none
-  real(8),allocatable,dimension(:,:,:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*8
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorD3D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-subroutine AllocatorI1D(array, imin, imax) 
-  implicit none
-  integer,intent(in) :: imin, imax
-  integer,allocatable,dimension(:) :: array
-  integer :: status
-  
-  allocate(array(imin:imax), stat=status)
-  totalMemory = totalMemory + size(array)*4
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorI1D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine 
-
-subroutine DeallocatorI1D(array) 
-  implicit none
-  integer,allocatable,dimension(:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*4
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorI1D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-subroutine AllocatorI2D(array, imin1, imax1, imin2, imax2) 
-  implicit none
-  integer,intent(in) :: imin1, imax1, imin2, imax2
-  integer,allocatable,dimension(:,:) :: array
-  integer :: status
-  
-  allocate(array(imin1:imax1,imin2:imax2), stat=status)
-  totalMemory = totalMemory + size(array)*4
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorI2D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine 
-
-subroutine DeallocatorI2D(array) 
-  implicit none
-  integer,allocatable,dimension(:,:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*4
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorI2D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-subroutine AllocatorI3D(array, imin1, imax1, imin2, imax2, imin3, imax3) 
-  implicit none
-  integer,intent(in) :: imin1, imax1, imin2, imax2, imin3, imax3
-  integer,allocatable,dimension(:,:,:) :: array
-  integer :: status
-  
-  allocate(array(imin1:imax1,imin2:imax2,imin3:imax3), stat=status)
-  totalMemory = totalMemory + size(array)*4
-
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorI3D: totalMemory = ', totalMemory, status
-
-  return 
-end subroutine 
-
-subroutine DeallocatorI3D(array) 
-  implicit none
-  integer,allocatable,dimension(:,:) :: array
-  integer :: status
-  
-  totalMemory = totalMemory - size(array)*4
-  deallocate(array, stat=status)
-  if(status/=0) print'(a30,i9,i3)', 'ERROR in DeallocatorI3D: totalMemory = ', totalMemory, status
-
-  return
-end subroutine 
-
-integer function GetTotalMemory() 
-  GetTotalMemory = totalMemory
-  return
-end function
-
-end module MemoryAllocator
 !-------------------------------------------------------------------------------------------

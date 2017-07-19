@@ -1,6 +1,7 @@
 !----------------------------------------------------------------------------------------
 subroutine OUTPUT(ffp, avs, bos, rxp, mpt, fileNameBase)
 use atom_vars; use atoms; use ff_params; use mpi_vars; use rxmd_params; use bo
+use qeq_terms
 !----------------------------------------------------------------------------------------
 implicit none
 
@@ -252,6 +253,7 @@ end subroutine OUTPUT
 !--------------------------------------------------------------------------
 subroutine ReadBIN(avs, rxp, mpt, fileName)
 use atom_vars; use rxmd_params; use atoms; use mpi_vars; use MemoryAllocator
+use qeq_terms
 !--------------------------------------------------------------------------
 implicit none
 
@@ -368,6 +370,7 @@ end
 !--------------------------------------------------------------------------
 subroutine WriteBIN(avs, rxp, mpt, fileNameBase)
 use atom_vars; use rxmd_params; use mpi_vars; use atoms
+use qeq_terms
 !--------------------------------------------------------------------------
 implicit none
 

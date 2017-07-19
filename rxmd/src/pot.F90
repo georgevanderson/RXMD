@@ -1,4 +1,36 @@
 !----------------------------------------------------------------------------------------------------------------------
+module energy_terms
+!----------------------------------------------------------------------------------------------------------------------
+
+real(8),parameter :: MAXANGLE= 0.999999999999d0
+real(8),parameter :: MINANGLE=-0.999999999999d0
+
+integer,allocatable :: itype(:) !-- integer part of atype
+integer,allocatable :: gtype(:) !-- global ID from atype
+
+!--- Passed between Elnpr and E3body
+real(8),allocatable :: nlp(:), dDlp(:) !Number of Lone Pairs, its derivatives.
+real(8),allocatable :: deltalp(:)
+
+contains
+
+!----------------------------------------------------------------------------------------------------------------------
+subroutine initialize_energy_terms(NBUFFER)
+use MemoryAllocator
+!----------------------------------------------------------------------------------------------------------------------
+implicit none
+integer,intent(in) :: NBUFFER
+
+call allocatori1d(itype,1,NBUFFER)
+call allocatori1d(gtype,1,NBUFFER)
+
+call allocatord1d(deltalp,1,NBUFFER)
+call allocatord1d(nlp,1,NBUFFER)
+call allocatord1d(dDlp,1,NBUFFER)
+  
+end subroutine
+
+!----------------------------------------------------------------------------------------------------------------------
 subroutine FORCE(ffp, mpt, bos, avs)
 use atom_vars; use mpi_vars; use ff_params; use atoms; use bo
 !----------------------------------------------------------------------------------------------------------------------
@@ -14,9 +46,6 @@ real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array d
 integer :: i, j, k
 integer :: l2g
 real(8) :: dr(3)
-
-integer :: itype(NBUFFER) !-- integer part of atype
-integer :: gtype(NBUFFER) !-- global ID from atype
 
 bos%ccbnd(:) = 0.d0
 avs%f(:,:) = 0.d0
@@ -48,15 +77,15 @@ enddo
 CALL BOCALC(bos, ffp, NMINCELL, avs%atype, avs%pos)
 !$omp end parallel
 !$omp parallel default(shared)
-CALL ENbond(avs%atype, avs%pos, avs%q, avs%f)
-CALL Ebond(avs%atype, avs%pos, avs%f)
-CALL Elnpr(avs%atype, avs%pos, avs%f)
-CALL Ehb(avs%atype, avs%pos, avs%f)
-CALL E3b(avs%atype, avs%pos, avs%f)
-CALL E4b(avs%atype, avs%pos, avs%f)
+CALL ENbond(ffp, avs%atype, avs%pos, avs%q, avs%f)
+CALL Ebond(ffp, bos, avs%atype, avs%pos, avs%f)
+CALL Elnpr(ffp, bos, avs%atype, avs%pos, avs%f)
+CALL Ehb(ffp, bos, avs%atype, avs%pos, avs%f)
+CALL E3b(ffp, bos, avs%atype, avs%pos, avs%f)
+CALL E4b(ffp, bos, avs%atype, avs%pos, avs%f)
 !$omp end parallel 
 
-CALL ForceBondedTerms(NMINCELL, avs%pos, avs%f)
+CALL ForceBondedTerms(NMINCELL, bos, avs%pos, avs%f)
 
 CALL COPYATOMS(avs, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
 
@@ -81,17 +110,18 @@ call stress()
 
 return
 
-CONTAINS 
+end subroutine
 
 !----------------------------------------------------------------------
-subroutine ForceBondedTerms(nlayer, pos, f)
-use atoms
+subroutine ForceBondedTerms(nlayer, bos, pos, f)
+use atoms; use bo
 !----------------------------------------------------------------------
 implicit none
 integer,intent(IN) :: nlayer
 integer :: c1,c2,c3 , i,i1,j,j1
 real(8) :: dr(3), ff(3)
 
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -124,11 +154,13 @@ end subroutine
 
 
 !-------------------------------------------------------------------------------------
-subroutine Elnpr(atype, pos, f)
-use ff_params;use atoms
+subroutine Elnpr(ffp, bos, atype, pos, f)
+use ff_params; use bo; use atoms
 !-------------------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -281,10 +313,10 @@ do i=1, NATOMS
       coeff(3) = CElp_b + CElp_bpp 
 
       i1=nbrindx(i,j1)
-      call ForceBbo(i,j1, j,i1, coeff, pos, f)
+      call ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
 
       CElp_d  = CEover(6) + CEunder(5)
-      call ForceD(j, CElp_d, pos, f)
+      call ForceD(j, CElp_d, bos, pos, f)
    enddo
 
 enddo ! i-loop
@@ -299,11 +331,13 @@ it_timer(9)=it_timer(9)+(tj-ti)
 END subroutine
 
 !------------------------------------------------------------------------------------
-subroutine E3b(atype, pos, f)
-use ff_params; use atoms
+subroutine E3b(ffp, bos, atype, pos, f)
+use ff_params; use bo; use atoms
 !------------------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -505,21 +539,21 @@ do j=1, NATOMS
 
 !--- Force calculation
             j1 = nbrindx(j, i1)
-            call ForceB(i,j1, j,i1, CE3body_b(1), pos, f) !BO_ij
+            call ForceB(i,j1, j,i1, CE3body_b(1), bos, pos, f) !BO_ij
 
             j1 = nbrindx(j, k1)
-            call ForceB(j,k1, k,j1, CE3body_b(2), pos, f) !BO_jk
+            call ForceB(j,k1, k,j1, CE3body_b(2), bos, pos, f) !BO_jk
 
             do n1=1, nbrlist(j,0)
                coeff(1:3) = CE3body_d(1) + CEval(6)*bos%BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
                n  = nbrlist(j, n1)
                j1 = nbrindx(j, n1)
-               call ForceBbo(j,n1, n,j1, coeff, pos, f) 
+               call ForceBbo(j,n1, n,j1, coeff, bos, pos, f) 
             enddo
 
-            call ForceD(i, CE3body_d(2), pos, f)
-            call ForceD(k, CE3body_d(3), pos, f)
+            call ForceD(i, CE3body_d(2), bos, pos, f)
+            call ForceD(k, CE3body_d(3), bos, pos, f)
 
             call ForceA3(CE3body_a, i, j, k, rij, rjk, pos, f) 
 
@@ -539,8 +573,8 @@ it_timer(11)=it_timer(11)+(tj-ti)
 
 END subroutine
 !----------------------------------------------------------------------------------------------------------------------
-subroutine Ehb(atype, pos, f)
-use ff_params; use atoms
+subroutine Ehb(ffp, bos, atype, pos, f)
+use ff_params; use bo; use atoms
 ! Note: 02-09-05 <kn>
 ! To find out hydrogen bonding combinations, <vnhbp> (one atom parameter, 2nd row, 8th column) is used to 
 ! identify whether an atoms is hydrogen or not, <vnhbp>=1 for H, <vnhbp>=2 for O,N,S and <vnhbp>=0 for others. 
@@ -552,6 +586,8 @@ use ff_params; use atoms
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -623,7 +659,7 @@ do i=1, NATOMS
                   CEhb(3) =-PEhb*ffp%phb3(inxnhb)*( -ffp%r0hb(inxnhb)/rjk(0)**2 + 1.d0/ffp%r0hb(inxnhb) )*(1.d0/rjk(0))
 
                   i1 = nbrindx(i,j1)
-                  call ForceB(i,j1, j,i1, CEhb(1), pos, f)
+                  call ForceB(i,j1, j,i1, CEhb(1), bos, pos, f)
                   call ForceA3(CEhb(2), i,j,k, rij, rjk, pos, f)
    
                   ff(1:3) = CEhb(3)*rjk(1:3)
@@ -665,7 +701,7 @@ it_timer(10)=it_timer(10)+(tj-ti)
 end subroutine
 
 !----------------------------------------------------------------------------------------------------------
-subroutine ENbond(atype, pos, q, f)
+subroutine ENbond(ffp, atype, pos, q, f)
 use ff_params; use atoms
 !----------------------------------------------------------------------------------------------------------
 !  This subroutine calculates the energy and the forces due to the Van der Waals and Coulomb terms 
@@ -674,6 +710,7 @@ implicit none
 integer :: i, j,j1, ity,jty
 integer :: c1,c2,c3, m
 
+type(forcefield_params),intent(in) :: ffp 
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3), q(NBUFFER)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -776,17 +813,20 @@ it_timer(7)=it_timer(7)+(tj-ti)
 END subroutine 
 
 !-----------------------------------------------------------------------------------------------------------------------
-subroutine Ebond(atype, pos, f)
-use atoms; use ff_params 
+subroutine Ebond(ffp, bos, atype, pos, f)
+use ff_params; use bo; use atoms
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
+
+type(forcefield_params),intent(in) :: ffp
+type(bo_var_type),intent(inout) :: bos
+real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+real(8),intent(out) :: f(NBUFFER,3)
+
 integer :: i,j, i1,j1, ity, jty, inxn
 real(8) :: exp_be12,  CEbo, PEbo, coeff(3)
 integer :: iid,jid
 integer :: ti,tj,tk
-
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
 
 !$omp master
 call system_clock(ti,tk)
@@ -817,7 +857,7 @@ do i=1, NATOMS
         coeff(1:3)= (/ CEbo, -ffp%Depi(inxn), -ffp%Depipi(inxn) /)
 
         i1 = nbrindx(i,j1)
-        call ForceBbo(i,j1, j,i1, coeff, pos, f)
+        call ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
 
       endif
 
@@ -833,11 +873,13 @@ it_timer(8)=it_timer(8)+(tj-ti)
 end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine E4b(atype, pos, f)
-use atoms; use ff_params
+subroutine E4b(ffp, bos, atype, pos, f)
+use atoms; use ff_params; use bo
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 
+type(forcefield_params),intent(in) :: ffp
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -1038,22 +1080,24 @@ do j=1,NATOMS
                  C4body_b(1:3) = CEconj(1:3) + CEtors(4:6) !dBOij, dBOjk, dBOkl
                  C4body_a(1:3) = CEconj(4:6) + CEtors(7:9) !ijk, jkl, ijkl
 
-                 call ForceD(j, CEtors(3), pos, f)
-                 call ForceD(k, CEtors(3), pos, f)
+                 call ForceD(j, CEtors(3), bos, pos, f)
+                 call ForceD(k, CEtors(3), bos, pos, f)
 
                  j1 = nbrindx(j, i1)
-                 call ForceB(i,j1, j,i1, C4body_b(1), pos, f)
+                 call ForceB(i,j1, j,i1, C4body_b(1), bos, pos, f)
 
 !--- To take care of the derivative of BOpi(j,k), add <Ctors(2)> to 
 !--- the full BOjk derivative coefficient <C4body_b(2)>, but only pi-bond 
 !--- component.
-                 C4body_b_jk(1:3) = C4body_b(2) + (/0.d0, CEtors(2), 0.d0 /)
+                 C4body_b_jk(1) = C4body_b(2)
+                 C4body_b_jk(2) = C4body_b(2) + CEtors(2)
+                 C4body_b_jk(3) = C4body_b(2)
 
                  j1 = nbrindx(j, k1)
-                 call ForceBbo(j,k1, k,j1, C4body_b_jk, pos, f)
+                 call ForceBbo(j,k1, k,j1, C4body_b_jk, bos, pos, f)
 
                  k2 = nbrindx(k, l1)
-                 call ForceB(k,l1, l,k2, C4body_b(3), pos, f)
+                 call ForceB(k,l1, l,k2, C4body_b(3), bos, pos, f)
 
                  call ForceA3(C4body_a(1), i,j,k, rij,rjk, pos, f)
                  call ForceA3(C4body_a(2), j,k,l, rjk,rkl, pos, f)
@@ -1086,14 +1130,15 @@ it_timer(12)=it_timer(12)+(tj-ti)
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceD(i, coeff, pos, f)
-use atoms
+subroutine ForceD(i, coeff, bos, pos, f)
+use atoms; use bo
 ! Calculate force from derivative of delta(i). 
 !-----------------------------------------------------------------------------------------
 implicit none
 
 integer,intent(IN) :: i
 real(8),intent(IN) :: coeff
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -1141,8 +1186,8 @@ return
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceB(i,j1, j,i1, coeff, pos, f)
-use atoms
+subroutine ForceB(i,j1, j,i1, coeff, bos, pos, f)
+use atoms; use bo
 ! Derivative of BOij using new bond order definition. Only difference is that sigma BO
 ! prime is replaced with full BOp. The derivative of BO becomes a bit simpler due to 
 ! the new definition.
@@ -1151,6 +1196,7 @@ implicit none
 
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff 
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -1192,14 +1238,15 @@ return
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceBbo(i,j1, j,i1, coeff, pos, f)
-use atoms
+subroutine ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
+use atoms; use bo
 ! Calculate force from derivative of BOij using different coefficient values 
 !-----------------------------------------------------------------------------------------
 implicit none
 
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff(3)
+type(bo_var_type),intent(inout) :: bos
 real(8),intent(in) :: pos(NBUFFER,3)
 real(8),intent(out) :: f(NBUFFER,3)
 
@@ -1256,10 +1303,11 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2, pos, f)
-use atoms
+use atoms; use bo
 ! derivative of <cos_ijkl>
 !-----------------------------------------------------------------------------------------
 implicit none
+
 ! Daa(0)=Daa-1, Daa(-1)=Da-1a-2
 ! Caa( 0,0)=Caa,   Caa( 0,-1)=Caa-1,   Caa( 0,-2)=Caa-2,
 ! Caa(-1,0)=Ca-1a, Caa(-1,-1)=Ca-1a-1, Caa(-1,-2)=Ca-1a-2
@@ -1454,4 +1502,4 @@ use atoms
    
 end subroutine 
 
-END subroutine FORCE
+end module
