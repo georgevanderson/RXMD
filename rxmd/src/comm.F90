@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------------------------------------------
-subroutine COPYATOMS(avs, mpt, imode, dr)
-use atoms; use atom_vars; use mpi_vars; use qeq_terms
+subroutine COPYATOMS(mcx, avs, mpt, imode, dr)
+use md_context; use atom_vars; use mpi_vars; use qeq_terms; use support_funcs
 !
 ! TODO: update notes here
 !
@@ -32,9 +32,11 @@ integer,intent(IN) :: imode
 real(8),intent(IN) :: dr(3)
 
 type(atom_var_type) :: avs
+type(md_context_type) :: mcx
 type(mpi_var_type),intent(in) :: mpt
 
-real(8) :: rnorm(NBUFFER,3) ! <- normalized coordinate
+! normalized coordinate used to find atoms in buffer regions
+real(8),allocatable :: rnorm(:,:) 
 
 integer :: i,tn1,tn2, dflag
 integer :: ni, ity
@@ -54,11 +56,13 @@ integer,parameter :: dinv(6)=(/2,1,4,3,6,5/)
 
 call system_clock(tti,tk)
 
+if(.not.allocated(rnorm) ) allocate(rnorm(mcx%NBUFFER,3))
+
 !--- Normalized local coordinate will be used through this function. 
 !--- How many atom coords need to be normalized depends on who calls this.
 !--- For example function calls during QEq (MODE_QCOPY1 & MODE_QCOPY2) assume
 !--- atom information of the extended domain regions. 
-call xu2xs(avs%pos, rnorm, max(NATOMS,copyptr(6)))
+call xu2xs(mcx, avs%pos, rnorm, max(mcx%NATOMS,mcx%copyptr(6)))
 
 !--- clear total # of copied atoms, sent atoms, recieved atoms
 na=0;ns=0;nr=0
@@ -66,7 +70,7 @@ na=0;ns=0;nr=0
 !--- REMARK: note that MODE_CPBK depends on copyptr() generated during MODE_COPY.
 !--- Since cached atoms are stored after the resident atoms (i.e. i > NATOMS), 
 !--- initialize the cache atom pointer 0th elem with NATOMS.
-copyptr(0)=NATOMS
+mcx%copyptr(0)=mcx%NATOMS
 
 !--- set the number of data per atom 
 select case(imode)
@@ -87,18 +91,18 @@ select case(imode)
 end select
 
 do dflag=1, 6
-   tn1 = target_node(dflag)
-   tn2 = target_node(dinv(dflag))
+   tn1 = mcx%target_node(dflag)
+   tn2 = mcx%target_node(dinv(dflag))
    i = (dflag+1)/2  !<- [123]
 
    if(imode==MODE_CPBK) then  ! communicate with neighbors in reversed order
-      tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
-      tn2 = target_node(7-dflag) ! <-[654321] 
+      tn1 = mcx%target_node(7-dinv(dflag)) ! <-[563412] 
+      tn2 = mcx%target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
    endif
 
    call store_atoms(avs, mpt, tn1, dflag, imode, dr)
-   call send_recv(mpt, tn1, tn2, myparity(i))
+   call send_recv(mpt, tn1, tn2, mcx%myparity(i))
    call append_atoms(avs, mpt, dflag, imode)
 
 enddo
@@ -107,7 +111,7 @@ enddo
 if(imode==MODE_MOVE) then
 !--- remove atoms which are transfered to neighbor nodes.
    ni=0
-   do i=1, NATOMS + na/ne
+   do i=1, mcx%NATOMS + na/ne
       ity = nint(avs%atype(i))
 !--- if atype is smaller than zero (this is done in store_atoms), ignore the atom.
       if(ity>0) then
@@ -124,12 +128,13 @@ if(imode==MODE_MOVE) then
    enddo 
 
 !--- update the number of resident atoms
-   NATOMS=ni
+   mcx%NATOMS=ni
 
 endif
 
 !--- by here, we got new atom positions in the normalized coordinate, need to update real coordinates.
-if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(rnorm,avs%pos,copyptr(6))
+if(imode== MODE_COPY .or. imode == MODE_MOVE) & 
+     call xs2xu(mcx, rnorm,avs%pos,mcx%copyptr(6))
 
 !! FIXME
 ! disable the array size statistics since it requires rxmd_param_type%pstep deep inside this routine.
@@ -141,14 +146,14 @@ if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(rnorm,avs%pos,copyptr(6
 !endif
 
 call system_clock(ttj,tk)
-it_timer(4)=it_timer(4)+(ttj-tti)
+mcx%it_timer(4)=mcx%it_timer(4)+(ttj-tti)
 
 return
 CONTAINS 
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine send_recv(mpt, tn1, tn2, mypar)
-use atoms; use mpi_vars
+use md_context; use mpi_vars
 ! shared variables::  <ns>, <nr>, <na>, <sbuffer()>, <rbuffer()>
 ! This subroutine only takes care of communication part. won't be affected by wether atom migration or atom 
 ! copy mode. 
@@ -159,6 +164,7 @@ type(mpi_var_type),intent(in) :: mpt
 integer,intent(IN) ::tn1, tn2, mypar 
 integer :: recv_stat(MPI_STATUS_SIZE)
 real(8) :: recv_size
+integer :: ierr
 
 !--- if the traget node is the node itself, atoms informations are already copied 
 !--- to <rbuffer> in <store_atoms()>. Nothing to do here. Just return from this subroutine.
@@ -210,13 +216,13 @@ elseif (mypar == 1) then
 endif
 
 call system_clock(tj,tk)
-it_timer(25)=it_timer(25)+(tj-ti)
+mcx%it_timer(25)=mcx%it_timer(25)+(tj-ti)
 
 end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine store_atoms(avs, mpt, tn, dflag, imode, dr)
-use atoms; use atom_vars; use mpi_vars
+use md_context; use atom_vars; use mpi_vars
 ! <nlayer> will be used as a flag to change the behavior of this subroutine. 
 !    <nlayer>==0 migration mode
 !            > 0 copy mode
@@ -244,7 +250,7 @@ cptridx=((dflag-1)/2)*2 ! <- [002244]
 if(imode/=MODE_CPBK) then
 
 !--- # of elements to be sent. should be more than enough. 
-   ni = copyptr(cptridx)*ne
+   ni = mcx%copyptr(cptridx)*ne
 
 !--- <sbuffer> will deallocated in store_atoms.
    call CheckSizeThenReallocate(sbuffer,ni)
@@ -257,7 +263,7 @@ if(imode/=MODE_CPBK) then
    sft=xshift(dflag)
 
 !--- start buffering data depending on modes. all copy&move modes use buffer size, dr, to select atoms.
-   do n=1, copyptr(cptridx)
+   do n=1, mcx%copyptr(cptridx)
 
       if(inBuffer(dflag,n,dr)) then
 
@@ -297,7 +303,7 @@ if(imode/=MODE_CPBK) then
            sbuffer(ns+3) = avs%q(n)
 
         case(MODE_STRESSCALC)
-           sbuffer(ns+1:ns+6) = astr(1:6,n)
+           sbuffer(ns+1:ns+6) = mcx%astr(1:6,n)
 
         end select 
 
@@ -312,14 +318,14 @@ else if(imode==MODE_CPBK) then
 
    is = 7 - dflag !<- [654321] reversed order direction flag
 
-   n = copyptr(is) - copyptr(is-1) + 1
+   n = mcx%copyptr(is) - mcx%copyptr(is-1) + 1
    call CheckSizeThenReallocate(sbuffer,n*ne)
 
-   do n=copyptr(is-1)+1, copyptr(is)
-      sbuffer(ns+1) = dble(frcindx(n))
+   do n=mcx%copyptr(is-1)+1, mcx%copyptr(is)
+      sbuffer(ns+1) = dble(mcx%frcindx(n))
       sbuffer(ns+2:ns+4) = avs%f(n,1:3)
 #ifdef STRESS
-      sbuffer(ns+5:ns+10) = astr(1:6,n)
+      sbuffer(ns+5:ns+10) = mcx%astr(1:6,n)
 #endif
 !--- chenge index to point next atom.
       ns=ns+ne
@@ -341,13 +347,13 @@ if(mpt%myid==tn) then
 endif
 
 call system_clock(tj,tk)
-it_timer(26)=it_timer(26)+(tj-ti)
+mcx%it_timer(26)=mcx%it_timer(26)+(tj-ti)
 
 end subroutine store_atoms
 
 !--------------------------------------------------------------------------------------------------------------
 subroutine append_atoms(avs, mpt, dflag, imode)
-use atoms; use atom_vars; use mpi_vars
+use md_context; use atom_vars; use mpi_vars
 ! <append_atoms> append copied information into arrays
 ! shared variables::  <ns>, <nr>, <na>, <ne>, <sbuffer()>, <rbuffer()>
 !--------------------------------------------------------------------------------------------------------------
@@ -356,13 +362,13 @@ implicit none
 type(atom_var_type) :: avs
 type(mpi_var_type),intent(in) :: mpt
 integer,intent(IN) :: dflag, imode 
-integer :: m, i, ine
+integer :: m, i, ine, ierr
 
 call system_clock(ti,tk)
 
-if( (na+nr)/ne > NBUFFER) then
+if( (na+nr)/ne > mcx%NBUFFER) then
     print'(a,i4,5i8)', "ERROR: over capacity in append_atoms; myid,na,nr,ne,(na+nr)/ne,NBUFFER: ", &
-         mpt%myid,na,nr,ne,(na+nr)/ne, NBUFFER
+         mpt%myid,na,nr,ne,(na+nr)/ne, mcx%NBUFFER
     call MPI_FINALIZE(ierr)
     stop
 endif
@@ -376,7 +382,7 @@ if(imode /= MODE_CPBK) then
       ine=i*ne
 
 !--- current atom index; resident + 1 + stored atoms so far + atoms in buffer
-      m = NATOMS + 1 + na/ne + i
+      m = mcx%NATOMS + 1 + na/ne + i
 
       select case(imode)
          case(MODE_MOVE)
@@ -393,7 +399,7 @@ if(imode /= MODE_CPBK) then
               rnorm(m,1:3) = rbuffer(ine+1:ine+3)
               avs%atype(m) = rbuffer(ine+4)
               avs%q(m)  = rbuffer(ine+5)
-              frcindx(m) = nint(rbuffer(ine+6))
+              mcx%frcindx(m) = nint(rbuffer(ine+6))
               qs(m) = rbuffer(ine+7)
               qt(m) = rbuffer(ine+8)
               hs(m) = rbuffer(ine+9)
@@ -409,7 +415,7 @@ if(imode /= MODE_CPBK) then
               avs%q(m)  = rbuffer(ine+3)
 
            case(MODE_STRESSCALC)
-              astr(1:6,m) = rbuffer(ine+1:ine+6)
+              mcx%astr(1:6,m) = rbuffer(ine+1:ine+6)
       
       end select
 
@@ -425,7 +431,7 @@ else if(imode == MODE_CPBK) then
       m = nint(rbuffer(ine+1))
       avs%f(m,1:3) = avs%f(m,1:3) + rbuffer(ine+2:ine+4)
 #ifdef STRESS
-      astr(1:6,m) = astr(1:6,m) + rbuffer(ine+5:ine+10)
+      mcx%astr(1:6,m) = mcx%astr(1:6,m) + rbuffer(ine+5:ine+10)
 #endif
    enddo
 
@@ -435,21 +441,21 @@ endif
 !--- store the last transfered atom index to <dflag> direction.
 !--- if no data have been received, use the index of previous direction.
 if(imode /= MODE_CPBK) then
-  if(nr==0) m = copyptr(dflag-1)
-  copyptr(dflag) = m
+  if(nr==0) m = mcx%copyptr(dflag-1)
+  mcx%copyptr(dflag) = m
 endif
 
 !--- update the total # of transfered elements.
 na=na+nr
 
 call system_clock(tj,tk)
-it_timer(27)=it_timer(27)+(tj-ti)
+mcx%it_timer(27)=mcx%it_timer(27)+(tj-ti)
 
 end subroutine append_atoms
 
 !--------------------------------------------------------------------------------------------------------------
 real(8) function xshift(dflag)
-use atoms
+use md_context
 ! This subroutine returns a correction value in coordinate for transfered atoms.
 !--------------------------------------------------------------------------------------------------------------
 implicit none
@@ -460,9 +466,9 @@ integer :: i, j
   j = int((dflag+1)/2)  !<- [123] means [xyz]
 
   if(i==1) then
-      xshift =-lbox(j)
+      xshift =-mcx%lbox(j)
   else if(i==0) then
-      xshift = lbox(j)
+      xshift = mcx%lbox(j)
   endif
    
 !print'(a,i,3f10.3)',"shift: ",myid, xshift
@@ -470,7 +476,7 @@ end function
 
 !--------------------------------------------------------------------------------------------------------------
 function inBuffer(dflag, idx, dr) result(isInside)
-use atoms
+use md_context
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 integer,intent(IN) :: dflag, idx
@@ -481,15 +487,15 @@ logical :: isInside
 i = mod(dflag,2)  !<- i=1 means positive, i=0 means negative direction 
 select case(dflag)
    case(1) 
-      isInside = lbox(1) - dr(1) < rnorm(idx,1)
+      isInside = mcx%lbox(1) - dr(1) < rnorm(idx,1)
    case(2) 
       isInside = rnorm(idx,1) <= dr(1)
    case(3) 
-      isInside = lbox(2) - dr(2) < rnorm(idx,2)
+      isInside = mcx%lbox(2) - dr(2) < rnorm(idx,2)
    case(4) 
       isInside = rnorm(idx,2) <= dr(2)
    case(5) 
-      isInside = lbox(3) - dr(3) < rnorm(idx,3)
+      isInside = mcx%lbox(3) - dr(3) < rnorm(idx,3)
    case(6) 
       isInside = rnorm(idx,3) <= dr(3)
    case default

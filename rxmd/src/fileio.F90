@@ -1,10 +1,11 @@
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(ffp, avs, bos, rxp, mpt, fileNameBase)
-use atom_vars; use atoms; use ff_params; use mpi_vars; use rxmd_params; use bo
+subroutine OUTPUT(mcx, ffp, avs, bos, rxp, mpt, fileNameBase)
+use atom_vars; use md_context; use ff_params; use mpi_vars; use rxmd_params; use bo
 use qeq_terms
 !----------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
 type(bo_var_type),intent(in) :: bos
 type(forcefield_params),intent(in) :: ffp
@@ -13,30 +14,28 @@ type(mpi_var_type),intent(in) :: mpt
 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
-if(rxp%isBinary) then
-  call WriteBIN(avs, rxp, mpt, fileNameBase)
-endif
+if(rxp%isBinary) call WriteBIN(mcx, avs, rxp, mpt, fileNameBase)
 
-if(rxp%isBondFile) call WriteBND(avs, bos, mpt, fileNameBase)
-if(rxp%isPDB) call WritePDB(ffp, avs, mpt, fileNameBase)
+if(rxp%isBondFile) call WriteBND(mcx, avs, bos, mpt, fileNameBase)
+if(rxp%isPDB) call WritePDB(mcx, ffp, avs, mpt, fileNameBase)
 
 return
 
 Contains 
 
 !--------------------------------------------------------------------------
-subroutine WriteBND(avs, bos, mpt, fileNameBase)
-use mpi_vars; use bo
+subroutine WriteBND(mcx, avs, bos, mpt, fileNameBase)
+use mpi_vars; use bo; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
 type(bo_var_type),intent(in) :: bos
 type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i, ity, j, j1, jty, m
-integer :: l2g
 real(8) :: bndordr(MAXNEIGHBS)
 integer :: igd,jgd,bndlist(0:MAXNEIGHBS)
 
@@ -54,13 +53,13 @@ character(len=:),allocatable :: BNDAllLines
 
 integer :: scanbuf
 
-integer :: ti,tj,tk
+integer :: ti,tj,tk, ierr
 call system_clock(ti,tk)
 
 ! precompute the total # of neighbors
 m=0
-do i=1, NATOMS
-   do j1 = 1, nbrlist(i,0)
+do i=1, mcx%NATOMS
+   do j1 = 1, mcx%nbrlist(i,0)
 !--- don't count if BO is less than BNDcutoff.
        if(bos%BO(0,i,j1) > BNDcutoff) then 
            m=m+1
@@ -72,7 +71,7 @@ enddo
 
 ! get local datasize based on above format and the total # of neighbors
 baseCharPerAtom=12+1+3*12+1+2*3 +1 ! last 1 for newline
-localDataSize=NATOMS*(baseCharPerAtom)+m*(1+12+6)
+localDataSize=mcx%NATOMS*(baseCharPerAtom)+m*(1+12+6)
 
 if( (baseCharPerAtom+MAXNEIGHBS*(1+12+6)) > MaxBNDLineSize) then
     print'(a,i6,2i12)', 'ERROR: MaxBNDLineSize is too small @ WriteBND', &
@@ -103,15 +102,15 @@ allocate(character(len=localDataSize) :: BNDAllLines)
 BNDALLLines=""
 
 BNDLineSize=0
-do i=1, NATOMS
+do i=1, mcx%NATOMS
    ity = nint(avs%atype(i))
 !--- get global ID for i-atom
    igd = l2g(avs%atype(i))
 
 !--- count the number bonds to be shown.
    bndlist(0)=0
-   do j1 = 1, nbrlist(i,0)
-      j = nbrlist(i,j1)
+   do j1 = 1, mcx%nbrlist(i,0)
+      j = mcx%nbrlist(i,j1)
       jty = nint(avs%atype(j))
 
 !--- get global ID for j-atom
@@ -147,23 +146,24 @@ call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 call MPI_File_Close(fh,ierr)
 
 call system_clock(tj,tk)
-it_timer(20)=it_timer(20)+(tj-ti)
+mcx%it_timer(20)=mcx%it_timer(20)+(tj-ti)
 
 return
 end subroutine
 
 !--------------------------------------------------------------------------
-subroutine WritePDB(ffp, avs, mpt, fileNameBase)
-use ff_params;  use mpi_vars
+subroutine WritePDB(mcx, ffp, avs, mpt, fileNameBase)
+use ff_params;  use mpi_vars; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
 type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
-integer :: i, ity, igd, l2g
+integer :: i, ity, igd
 real(8) :: tt=0.d0, ss=0.d0
 
 integer (kind=MPI_OFFSET_KIND) :: offset
@@ -178,11 +178,11 @@ character(len=:),allocatable :: PDBAllLines
 
 integer :: scanbuf
 
-integer :: ti,tj,tk
+integer :: ti,tj,tk, ierr
 call system_clock(ti,tk)
 
 ! get local datasize
-localDataSize=NATOMS*PDBLineSize
+localDataSize=mcx%NATOMS*PDBLineSize
 
 call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".pdb", &
      MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
@@ -207,11 +207,11 @@ PDBAllLines=""
 
 call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 
-do i=1, NATOMS
+do i=1, mcx%NATOMS
 
   ity = nint(avs%atype(i))
 !--- calculate atomic temperature 
-  tt = hmas(ity)*sum(avs%v(i,1:3)*avs%v(i,1:3))
+  tt = mcx%hmas(ity)*sum(avs%v(i,1:3)*avs%v(i,1:3))
   tt = tt*UTEMP*1d-2 !scale down to use two decimals in PDB format 
 
 !--- sum up diagonal atomic stress components 
@@ -243,7 +243,7 @@ call MPI_File_Close(fh,ierr)
 100 format(A6,I5,1x,A2,i12,4x,3f8.3,f6.2,f6.2)
 
 call system_clock(tj,tk)
-it_timer(21)=it_timer(21)+(tj-ti)
+mcx%it_timer(21)=mcx%it_timer(21)+(tj-ti)
 
 
 end subroutine
@@ -251,15 +251,16 @@ end subroutine
 end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
-subroutine ReadBIN(avs, rxp, mpt, fileName)
-use atom_vars; use rxmd_params; use atoms; use mpi_vars; use MemoryAllocator
-use qeq_terms
+subroutine ReadBIN(mcx, avs, rxp, mpt, fileName)
+use atom_vars; use rxmd_params; use md_context; use mpi_vars; use MemoryAllocator
+use qeq_terms; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
-type(atom_var_type),intent(out) :: avs 
+type(md_context_type),intent(inout) :: mcx
+type(atom_var_type),intent(inout) :: avs 
 type(rxmd_param_type),intent(in) :: rxp
-type(mpi_var_type),intent(out) :: mpt
+type(mpi_var_type),intent(inout) :: mpt
 
 character(*),intent(in) :: fileName
 
@@ -275,12 +276,14 @@ integer,allocatable :: idata(:)
 real(8),allocatable :: dbuf(:)
 real(8) :: ddata(6), d10(10)
 
-real(8) :: rnorm(NBUFFER,3), mat(3,3)
+real(8),allocatable :: rnorm(:,:)
+real(8) ::  mat(3,3)
 integer :: j
 
-integer :: ti,tj,tk
+integer :: ti,tj,tk, ierr
 call system_clock(ti,tk)
 
+if(.not.allocated(rnorm)) allocate(rnorm(mcx%NBUFFER,3))
 
 ! Meta Data: 
 !  Total Number of MPI ranks and MPI ranks in xyz (4 integers)
@@ -302,14 +305,14 @@ offsettmp=4*nmeta
 call MPI_File_Seek(fh,offsettmp,MPI_SEEK_SET,ierr)
 call MPI_File_Read(fh,ddata,6,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
-NATOMS = idata(4+mpt%myid+1)
-current_step = idata(nmeta)
+mcx%NATOMS = idata(4+mpt%myid+1)
+mcx%current_step = idata(nmeta)
 deallocate(idata)
-lata=ddata(1); latb=ddata(2); latc=ddata(3)
-lalpha=ddata(4); lbeta=ddata(5); lgamma=ddata(6)
+mcx%lata=ddata(1); mcx%latb=ddata(2); mcx%latc=ddata(3)
+mcx%lalpha=ddata(4); mcx%lbeta=ddata(5); mcx%lgamma=ddata(6)
 
 ! Get local datasize: 10 doubles for each atoms
-localDataSize = 8*NATOMS*10
+localDataSize = 8*mcx%NATOMS*10
 
 ! offset will point the end of local write after the scan
 call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
@@ -326,19 +329,19 @@ fileSize = offset
 offset=offset-localDataSize
 call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 
-allocate(dbuf(10*NATOMS))
-call MPI_File_Read(fh,dbuf,10*NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
+allocate(dbuf(10*mcx%NATOMS))
+call MPI_File_Read(fh,dbuf,10*mcx%NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 
-if(.not.allocated(avs%atype)) call allocatord1d(avs%atype,1,NBUFFER)
-if(.not.allocated(avs%q)) call allocatord1d(avs%q,1,NBUFFER)
-if(.not.allocated(avs%pos)) call allocatord2d(avs%pos,1,NBUFFER,1,3)
-if(.not.allocated(avs%v)) call allocatord2d(avs%v,1,NBUFFER,1,3)
-if(.not.allocated(avs%f)) call allocatord2d(avs%f,1,NBUFFER,1,3)
-if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
-if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
+if(.not.allocated(avs%atype)) call allocatord1d(avs%atype,1,mcx%NBUFFER)
+if(.not.allocated(avs%q)) call allocatord1d(avs%q,1,mcx%NBUFFER)
+if(.not.allocated(avs%pos)) call allocatord2d(avs%pos,1,mcx%NBUFFER,1,3)
+if(.not.allocated(avs%v)) call allocatord2d(avs%v,1,mcx%NBUFFER,1,3)
+if(.not.allocated(avs%f)) call allocatord2d(avs%f,1,mcx%NBUFFER,1,3)
+if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,mcx%NBUFFER)
+if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,mcx%NBUFFER)
 avs%f(:,:)=0.0
 
-do i=1, NATOMS
+do i=1, mcx%NATOMS
     i1=10*(i-1)
     rnorm(i,1:3)=dbuf(i1+1:i1+3)
     avs%v(i,1:3)=dbuf(i1+4:i1+6)
@@ -352,28 +355,29 @@ deallocate(dbuf)
 call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 call MPI_File_Close(fh,ierr)
 
-call GetBoxParams(mat,lata,latb,latc,lalpha,lbeta,lgamma)
+call GetBoxParams(mat,mcx%lata,mcx%latb,mcx%latc,mcx%lalpha,mcx%lbeta,mcx%lgamma)
 do i=1, 3
 do j=1, 3
-   HH(i,j,0)=mat(i,j)
+   mcx%HH(i,j,0)=mat(i,j)
 enddo; enddo
-call UpdateBoxParams(rxp)
+call UpdateBoxParams(mcx, rxp)
 
-call xs2xu(rnorm,avs%pos,NATOMS)
+call xs2xu(mcx,rnorm,avs%pos,mcx%NATOMS)
 
 call system_clock(tj,tk)
-it_timer(22)=it_timer(22)+(tj-ti)
+mcx%it_timer(22)=mcx%it_timer(22)+(tj-ti)
 
 return
 end
 
 !--------------------------------------------------------------------------
-subroutine WriteBIN(avs, rxp, mpt, fileNameBase)
-use atom_vars; use rxmd_params; use mpi_vars; use atoms
-use qeq_terms
+subroutine WriteBIN(mcx, avs, rxp, mpt, fileNameBase)
+use atom_vars; use rxmd_params; use mpi_vars; use md_context
+use qeq_terms; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
@@ -391,12 +395,14 @@ integer,allocatable :: ldata(:),gdata(:)
 real(8) :: ddata(6)
 real(8),allocatable :: dbuf(:)
 
-real(8) :: rnorm(NBUFFER,3)
+real(8),allocatable :: rnorm(:,:)
 
-integer :: ti,tj,tk
+integer :: ti,tj,tk, ierr
 call system_clock(ti,tk)
 
-call xu2xs(avs%pos,rnorm,NATOMS)
+if( .not. allocated(rnorm) ) allocate(rnorm(mcx%NBUFFER,3))
+
+call xu2xs(mcx, avs%pos,rnorm,mcx%NATOMS)
 
 ! Meta Data: 
 !  Total Number of MPI ranks and MPI ranks in xyz (4 integers)
@@ -406,7 +412,7 @@ nmeta=4+mpt%nprocs+1
 metaDataSize = 4*nmeta + 8*6
 
 ! Get local datasize: 10 doubles for each atoms
-localDataSize = 8*NATOMS*10
+localDataSize = 8*mcx%NATOMS*10
 
 call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".bin",MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
 
@@ -419,14 +425,14 @@ offset = scanbuf + metaDataSize
 ! save metadata at the beginning of file
 allocate(ldata(nmeta),gdata(nmeta))
 ldata(:)=0
-ldata(4+mpt%myid+1)=NATOMS
+ldata(4+mpt%myid+1)=mcx%NATOMS
 call MPI_ALLREDUCE(ldata,gdata,nmeta,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
 gdata(1)=mpt%nprocs
 gdata(2:4)=rxp%vprocs
-gdata(nmeta)=nstep+current_step
+gdata(nmeta)=mcx%nstep+mcx%current_step
 
-ddata(1)=lata; ddata(2)=latb; ddata(3)=latc
-ddata(4)=lalpha; ddata(5)=lbeta; ddata(6)=lgamma
+ddata(1)=mcx%lata; ddata(2)=mcx%latb; ddata(3)=mcx%latc
+ddata(4)=mcx%lalpha; ddata(5)=mcx%lbeta; ddata(6)=mcx%lgamma
 
 if(mpt%myid==0) then
    offsettmp=0
@@ -443,8 +449,8 @@ deallocate(ldata,gdata)
 offset=offset-localDataSize
 call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 
-allocate(dbuf(10*NATOMS))
-do i=1, NATOMS
+allocate(dbuf(10*mcx%NATOMS))
+do i=1, mcx%NATOMS
    j = (i - 1)*10
    dbuf(j+1:j+3)=rnorm(i,1:3)
    dbuf(j+4:j+6)=avs%v(i,1:3)
@@ -453,14 +459,14 @@ do i=1, NATOMS
    dbuf(j+9)=qsfp(i)
    dbuf(j+10)=qsfv(i)
 enddo
-call MPI_File_Write(fh,dbuf,10*NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
+call MPI_File_Write(fh,dbuf,10*mcx%NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 deallocate(dbuf)
 
 call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 call MPI_File_Close(fh,ierr)
 
 call system_clock(tj,tk)
-it_timer(23)=it_timer(23)+(tj-ti)
+mcx%it_timer(23)=mcx%it_timer(23)+(tj-ti)
 
 return
 end

@@ -110,7 +110,7 @@ subroutine BracketSearchRange(myid,atype,pos,p,stepl)
 implicit none
 integer,intent(in) :: myid
 real(8),intent(in) :: atype(NBUFFER),pos(NBUFFER,3),p(NBUFFER,3)
-real(8),intent(out) :: stepl
+real(8),intent(inout) :: stepl
 real(8) :: vdummy(NBUFFER,3), qdummy(NBUFFER)
 integer :: bracketingLoop
 logical :: Elower, WolfeC1, WolfeC2
@@ -156,7 +156,7 @@ use mpi_vars
 !---------------------------------------------------------------------------------
 implicit none
 real(8),intent(in) :: atype(NBUFFER),pos(NBUFFER,3),p(NBUFFER,3),stepl
-logical,intent(out) :: isLowerEnergy,isArmijoRule,isCurvature
+logical,intent(inout) :: isLowerEnergy,isArmijoRule,isCurvature
 
 real(8) :: atypeTmp(NBUFFER),posTmp(NBUFFER,3),pTmp(NBUFFER,3),qTmp(NBUFFER)
 ! FIXME: here we don't really need v but COPYATOM(MOVE) requires it for the move mode. 

@@ -23,12 +23,13 @@ end type
 contains
 
 !--------------------------------------------------------------------------------------------
-subroutine initialize_bo_vars(bos)
+subroutine initialize_bo_vars(bos, NBUFFER)
+use md_context; use MemoryAllocator
 !--------------------------------------------------------------------------------------------
-   use atoms; use MemoryAllocator
-   implicit none
+implicit none
 
-   type(bo_var_type),intent(out) :: bos
+   type(bo_var_type),intent(inout) :: bos
+   integer,intent(in) :: NBUFFER
 
    !--- Bond Order terms
    call allocatord3d(bos%BO,0,3,1,NBUFFER,1,MAXNEIGHBS)
@@ -49,16 +50,20 @@ subroutine initialize_bo_vars(bos)
 end subroutine
 
 !--------------------------------------------------------------------------------------------
-SUBROUTINE BOCALC(bos, ffp, nlayer, atype, pos)
-use ff_params; use atoms
+SUBROUTINE BOCALC(bos, ffp, nlayer, atype, pos, mcx, ALLATOMS)
+use ff_params; use md_context
 !--------------------------------------------------------------------------------------------
 
 type(bo_var_type),intent(inout) :: bos
 type(forcefield_params),intent(in) :: ffp
+type(md_context_type),intent(inout) :: mcx
 integer,intent(in) :: nlayer
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+!real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+integer,intent(in) :: ALLATOMS
 
 integer :: ti,tj,tk
+
 
 !$omp master
 call system_clock(ti,tk)
@@ -73,14 +78,14 @@ CALL BOFULL(ffp)
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(6)=it_timer(6)+(tj-ti)
+mcx%it_timer(6)=mcx%it_timer(6)+(tj-ti)
 !$omp end master
 
 CONTAINS
 
 !--------------------------------------------------------------------------------------------
 SUBROUTINE BOPRIM(ffp, deltap)
-use ff_params; use atoms
+use ff_params; use md_context
 !--------------------------------------------------------------------------------------------
 ! Calculates the BOp(0:3,i,j) and the deltap(i). 
 !--------------------------------------------------------------------------------------------
@@ -100,30 +105,30 @@ cutoff_vpar30 = cutof2_bo*ffp%vpar30
 
 !--- initialize deltap(1:,1) to -Val(atype(i))
 !$omp do 
-do i=1, copyptr(6)
+do i=1, ALLATOMS
    ity = nint(atype(i))
    bos%deltap(i,1) = -ffp%Val(ity) 
 enddo
 !$omp end do
 
 !$omp do
-do i=1, copyptr(6)
+do i=1, ALLATOMS
    ity = nint(atype(i))
 
-   do j1=1, nbrlist(i,0)
+   do j1=1, mcx%nbrlist(i,0)
 
-     j = nbrlist(i,j1)
+     j = mcx%nbrlist(i,j1)
 
      if(j<i) then
         jty  = nint(atype(j))
         inxn = ffp%inxn2(ity, jty)
 
-        i1 = nbrindx(i,j1)
+        i1 = mcx%nbrindx(i,j1)
 
         dr(1:3) = pos(i,1:3) - pos(j,1:3)
         dr2= sum(dr(1:3)*dr(1:3))
 
-        if(dr2 <= rc2(inxn)) then
+        if(dr2 <= mcx%rc2(inxn)) then
 
           arg_BOpij(1) = ffp%cBOp1(inxn)*dr2**ffp%pbo2h(inxn)
           arg_BOpij(2) = ffp%cBOp3(inxn)*dr2**ffp%pbo4h(inxn)
@@ -180,7 +185,7 @@ END SUBROUTINE
 
 !--------------------------------------------------------------------------------------------
 SUBROUTINE BOFULL(ffp)
-use ff_params; use atoms 
+use ff_params; use md_context 
 !--------------------------------------------------------------------------------------------
 !  Subroutine calculates the Bond Order and its derivatives
 !--------------------------------------------------------------------------------------------
@@ -209,22 +214,22 @@ real(8) :: BOp0, BOpsqr
 real(8) :: exppboc1i,exppboc2i,exppboc1j,exppboc2j   !<kn>
 
 !$omp do
-do i=1, copyptr(6)
+do i=1, ALLATOMS
    ity = nint(atype(i))
    bos%deltap(i,2) = bos%deltap(i,1) + ffp%Val(ity) - ffp%Valboc(ity)
 enddo
 !$omp end do
 
 !$omp do 
-do i=1, copyptr(6)
+do i=1, ALLATOMS
    ity = nint(atype(i))
   
    exppboc1i = exp( -ffp%vpar1*bos%deltap(i,1) )  !<kn>
    exppboc2i = exp( -ffp%vpar2*bos%deltap(i,1) )  !<kn>
 
-   do j1=1, nbrlist(i,0)
+   do j1=1, mcx%nbrlist(i,0)
 
-      j=nbrlist(i,j1)
+      j=mcx%nbrlist(i,j1)
 
       if(j<i) then
 
@@ -233,7 +238,7 @@ do i=1, copyptr(6)
         exppboc1j = exp( -ffp%vpar1*bos%deltap(j,1) )  !<kn>
         exppboc2j = exp( -ffp%vpar2*bos%deltap(j,1) )  !<kn>
 
-        i1 = nbrindx(i,j1)
+        i1 = mcx%nbrindx(i,j1)
 
         inxn = ffp%inxn2(ity,jty)
 
@@ -345,16 +350,16 @@ do i=1, copyptr(6)
 
       endif !if(i<j)
 
-   enddo ! do j1=1,nbrlist(i,0) loop end
+   enddo ! do j1=1,mcx%nbrlist(i,0) loop end
 enddo
 !$omp end do
 
 !--- Calculate delta(i):
 !--- Initialize detal(i)
 !$omp do
-do i=1, copyptr(6)
+do i=1, ALLATOMS
    ity = nint(atype(i))
-   bos%delta(i) = -ffp%Val(ity) + sum( bos%BO(0,i,1:nbrlist(i,0)) )
+   bos%delta(i) = -ffp%Val(ity) + sum( bos%BO(0,i,1:mcx%nbrlist(i,0)) )
 enddo
 !$omp end do
 

@@ -1,13 +1,14 @@
 !------------------------------------------------------------------------------
 program rxmd
-use atom_vars; use bo; use atoms; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use energy_terms; use qeq_terms
+use atom_vars; use bo; use md_context; use rxmd_params; use cmdline_args; use mpi_vars
+use ff_params; use energy_terms; use qeq_terms; use support_funcs
 !use CG !!FIXME!!
 !------------------------------------------------------------------------------
 implicit none
-integer :: i,it1,it2,irt,provided
+integer :: i,it1,it2,irt,provided, nstep, ierr
 real(8) :: ctmp, dr(3)
 
+type(md_context_type) :: mcx
 type(forcefield_params) :: ffp
 type(atom_var_type) :: avs
 type(rxmd_param_type) :: rxp
@@ -19,106 +20,117 @@ call GetCmdLineArgs(cla)
 
 call GetMPIVariables(mpt)
 
+call initialize_md_context(mcx)
+
 if(mpt%myid==0)  print'(a30)', 'rxmd has started'
 
 !--- read ffield file
-CALL GETPARAMS(ffp, cla%FFPath, FFDescript)
+CALL GETPARAMS(ffp, cla%FFPath, mcx%FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
+CALL INITSYSTEM(mcx, ffp, avs, bos, rxp, cla, mpt)
 
 !!FIXME!!
 !if(rxp%mdmode==10) call ConjugateGradient(ffp, mpt, bos, avs, avs%atype, avs%pos, rxp%ftol)
 
-call QEq(ffp, avs, mpt, rxp)
-call FORCE(ffp, mpt, bos, avs)
+call QEq(ffp, avs, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos, avs, mcx)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
 
 do nstep=0, rxp%ntime_step-1
 
+!--- FIXME: user-defined type var cannot be used as a loop counter. update time of md context here. 
+   mcx%nstep=nstep
+
    if(mod(nstep, rxp%pstep)==0) then
-       call PRINTE(mpt, rxp%pstep, avs%atype, avs%v, avs%q)
+       call PRINTE(mcx, mpt, rxp%pstep, avs%atype, avs%v, avs%q)
    endif
+
    if(mod(nstep, rxp%fstep)==0) &
-        call OUTPUT(ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
+        call OUTPUT(mcx, ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+nstep))
 
    if(mod(nstep, rxp%sstep)==0 .and. rxp%mdmode==4) &
-      avs%v(1:NATOMS,1:3)=rxp%vsfact*avs%v(1:NATOMS,1:3)
+      avs%v(1:mcx%NATOMS,1:3)=rxp%vsfact*avs%v(1:mcx%NATOMS,1:3)
 
    if(mod(nstep,rxp%sstep)==0 .and. rxp%mdmode==5) then
-      ctmp = (rxp%treq*UTEMP0)/( GKE*UTEMP )
-      avs%v(1:NATOMS,1:3)=sqrt(ctmp)*avs%v(1:NATOMS,1:3)
+      ctmp = (rxp%treq*UTEMP0)/( mcx%GKE*UTEMP )
+      avs%v(1:mcx%NATOMS,1:3)=sqrt(ctmp)*avs%v(1:mcx%NATOMS,1:3)
    endif
 
    if(mod(nstep,rxp%sstep)==0.and.(rxp%mdmode==0.or.rxp%mdmode==6)) &
       call INITVELOCITY(avs%atype, avs%v)
 
-!--- correct the c.o.m motion
    if(mod(nstep,rxp%sstep)==0.and.rxp%mdmode==7) &
-      call ScaleTemperature(ffp, mpt, rxp%treq, avs%atype, avs%v)
+      call ScaleTemperature(mcx, ffp, mpt, rxp%treq, avs%atype, avs%v)
 
 !--- update velocity
-   call vkick(1.d0, avs%atype, avs%v, avs%f) 
+   call vkick(mcx, 1.d0, avs%atype, avs%v, avs%f) 
 
 !--- update coordinates
-   qsfv(1:NATOMS) = qsfv(1:NATOMS) + &
-      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:NATOMS)-qsfp(1:NATOMS))
+   qsfv(1:mcx%NATOMS) = qsfv(1:mcx%NATOMS) + &
+      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:mcx%NATOMS)-qsfp(1:mcx%NATOMS))
 
-   qsfp(1:NATOMS) = qsfp(1:NATOMS) + rxp%dt*qsfv(1:NATOMS)
+   qsfp(1:mcx%NATOMS) = qsfp(1:mcx%NATOMS) + rxp%dt*qsfv(1:mcx%NATOMS)
 
-   avs%pos(1:NATOMS,1:3) = avs%pos(1:NATOMS,1:3) + rxp%dt * avs%v(1:NATOMS,1:3)
+   avs%pos(1:mcx%NATOMS,1:3) = avs%pos(1:mcx%NATOMS,1:3) + rxp%dt * avs%v(1:mcx%NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
-   call COPYATOMS(avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+   call COPYATOMS(mcx, avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
    
-   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp)
-   call FORCE(ffp, mpt, bos, avs)
+   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp, mcx)
+   call FORCE(ffp, mpt, bos, avs, mcx)
 
 !--- update velocity
-   call vkick(1.d0, avs%atype, avs%v, avs%f) 
+   call vkick(mcx, 1.d0, avs%atype, avs%v, avs%f) 
 
-   qsfv(1:NATOMS) = qsfv(1:NATOMS) +  &
-      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:NATOMS)-qsfp(1:NATOMS))
+   qsfv(1:mcx%NATOMS) = qsfv(1:mcx%NATOMS) +  &
+      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:mcx%NATOMS)-qsfp(1:mcx%NATOMS))
 
 enddo
 
+!--- FIXME: user-defined type var cannot be used as a loop counter. update time of md context here. 
+mcx%nstep=nstep
+
 !--- save the final configurations
-call OUTPUT(ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, current_step+nstep))
+call OUTPUT(mcx, ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+mcx%nstep))
 
 !--- update rxff.bin in working directory for continuation run
-if(rxp%isBinary) call WriteBIN(avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
+if(rxp%isBinary) call WriteBIN(mcx, avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
 
 call system_clock(it2,irt)
-it_timer(Ntimer)=(it2-it1)
+mcx%it_timer(Ntimer)=(it2-it1)
 
-call FinalizeMD(mpt%myid, irt)
+call FinalizeMD(mcx, mpt%myid, irt)
 
 call MPI_FINALIZE(ierr)
 end PROGRAM
 
 !------------------------------------------------------------------------------
-subroutine FinalizeMD(myid, irt)
-use atoms; use MemoryAllocator; use mpi_vars
+subroutine FinalizeMD(mcx, myid, irt)
+use md_context; use MemoryAllocator; use mpi_vars
 !------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(in) :: mcx
 integer,intent(in) :: myid
 integer,intent(in) :: irt ! time resolution
 integer,allocatable :: ibuf(:),ibuf1(:)
 
-integer :: i
+integer :: it_timer_max(Ntimer), it_timer_min(Ntimer)
+
+integer :: i, ierr
 
 allocate(ibuf(nmaxas),ibuf1(nmaxas))
 ibuf(:)=0
 do i=1,nmaxas
-   ibuf(i)=maxval(maxas(:,i))
+   ibuf(i)=maxval(mcx%maxas(:,i))
 enddo
 call MPI_ALLREDUCE(ibuf, ibuf1, nmaxas, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
 
-call MPI_ALLREDUCE(it_timer, it_timer_max, Ntimer, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(it_timer, it_timer_min, Ntimer, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(mcx%it_timer, it_timer_max, Ntimer, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(mcx%it_timer, it_timer_min, Ntimer, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, ierr)
 
 if(myid==0) then
    print'(a)','----------------------------------------------'
@@ -172,528 +184,3 @@ endif
 deallocate(ibuf,ibuf1)
 
 end subroutine
-
-!------------------------------------------------------------------------------
-subroutine vkick(dtf, atype, v, f)
-use atoms
-!------------------------------------------------------------------------------
-implicit none
-
-real(8) :: atype(NBUFFER),v(NBUFFER,3),f(NBUFFER,3)
-
-integer :: i, ity
-real(8) :: dtf
-
-do i=1,NATOMS
-   ity = nint(atype(i))
-   v(i,1:3) = v(i,1:3) + dtf*dthm(ity)*f(i,1:3)
-enddo
-
-end subroutine
-
-!----------------------------------------------------------------------------------------
-subroutine PRINTE(mpt, pstep, atype, v, q)
-use atoms; use ff_params; use MemoryAllocator; use mpi_vars
-! calculate the kinetic energy and sum up all of potential energies, then print them.
-!----------------------------------------------------------------------------------------
-implicit none
-
-type(mpi_var_type) :: mpt
-integer,intent(in) :: pstep
-real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: v(NBUFFER,3)
-
-integer :: i,ity,cstep
-real(8),save :: wt0
-real(8) :: qq=0.d0,tt=0.d0,ss=0.d0,buf(0:20),Gbuf(0:20)
-
-i=nstep/pstep+1
-maxas(i,1)=NATOMS
-
-KE=0.d0
-do i=1, NATOMS
-   ity=nint(atype(i))
-   KE = KE + hmas(ity)*sum(v(i,1:3)*v(i,1:3))
-enddo
-qq=sum(q(1:NATOMS))
-
-#ifdef STRESS
-!--- pressure 
-ss=sum(astr(1:3,1:NATOMS))
-#endif
-
-!--- potential energy 
-PE(0)=sum(PE(1:13))
-
-!--- copy data into buffer
-buf(0:13) = PE(0:13)
-buf(14) = KE; buf(15) = ss; buf(16) = qq
-call MPI_ALLREDUCE (buf, Gbuf, size(buf), MPI_DOUBLE_PRECISION, MPI_SUM, mpt%mycomm, ierr)
-
-!--- copy data from buffer
-GPE(0:13) = Gbuf(0:13)
-GKE = Gbuf(14); ss = Gbuf(15); qq = Gbuf(16)
-
-!--- compute properties
-GPE(:)=GPE(:)/GNATOMS
-GKE=GKE/GNATOMS
-tt=GKE*UTEMP
-#ifdef STRESS
-ss=ss/3.d0/MDBOX*USTRS
-#endif 
-
-!--- total energy
-GTE = GKE + GPE(0)
-if(mpt%myid==0) then
-   
-   cstep = nstep + current_step 
-
-   write(6,'(i9,3es13.5,6es11.3,1x,3f8.2,i4,f8.2,f8.2)') cstep,GTE,GPE(0),GKE, &
-   GPE(1),sum(GPE(2:4)),sum(GPE(5:7)),sum(GPE(8:9)),GPE(10),sum(GPE(11:13)), &
-   tt, ss, qq, nstep_qeq, GetTotalMemory()*1e-9, MPI_WTIME()-wt0 
-
-#ifdef STRESS
-   write(6,'(6es13.5)') pint(1,1)*USTRS, pint(2,2)*USTRS, pint(3,3)*USTRS, &
-                        pint(2,3)*USTRS, pint(3,1)*USTRS, pint(1,2)*USTRS
-#endif
-
-endif
-
-!--- save current time
-wt0 = MPI_WTIME()
-end subroutine
-
-!----------------------------------------------------------------------------------------
-subroutine LINKEDLIST(atype, rreal, cellDims, headAtom, atomList, NatomPerCell, Ncells, NLAYERS)
-use atoms
-! partitions the volume into linked-list cells <lcsize>
-!----------------------------------------------------------------------------------------
-implicit none
-real(8),intent(in) :: atype(NBUFFER), rreal(3,NBUFFER), cellDims(3)
-
-integer,intent(in) :: Ncells(3), NLAYERS
-integer,intent(out) :: atomList(NBUFFER)
-integer,intent(out) :: NatomPerCell(-NLAYERS:Ncells(1)-1+NLAYERS, &
-                                    -NLAYERS:Ncells(2)-1+NLAYERS, &
-                                    -NLAYERS:Ncells(3)-1+NLAYERS) 
-integer,intent(out) :: headAtom(-NLAYERS:Ncells(1)-1+NLAYERS, & 
-                                -NLAYERS:Ncells(2)-1+NLAYERS, &
-                                -NLAYERS:Ncells(3)-1+NLAYERS) 
-
-real(8) :: rnorm(NBUFFER,3)
-integer :: n, l(3), j
-
-integer :: ti,tj,tk
-call system_clock(ti,tk)
-
-call xu2xs(rreal,rnorm,copyptr(6))
-
-headAtom(:,:,:) = -1; atomList(:) = 0; NatomPerCell(:,:,:)=0
-
-!--- copyptr(6) stores the last atom index copied in COPYATOMS.
-do n=1, copyptr(6) 
-
-   if(nint(atype(n))==0) cycle
-
-   l(1:3) = floor(rnorm(n,1:3)/cellDims(1:3))
-
-   atomList(n) = headAtom(l(1), l(2), l(3))
-   headAtom(l(1), l(2), l(3)) = n
-   NatomPerCell(l(1), l(2), l(3)) = NatomPerCell(l(1), l(2), l(3)) + 1
-enddo
-
-call system_clock(tj,tk)
-it_timer(3)=it_timer(3)+(tj-ti)
-
-end subroutine 
-
-!----------------------------------------------------------------------
-subroutine NEIGHBORLIST(ffp, nlayer, atype, pos)
-use atoms; use ff_params
-! calculate neighbor list for atoms witin cc(1:3, -nlayer:nlayer) cells.
-!----------------------------------------------------------------------
-implicit none
-
-type(forcefield_params),intent(in) :: ffp
-integer,intent(in) :: nlayer
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-
-integer :: c1,c2,c3, ic(3), c4, c5, c6
-integer :: n, n1, m, m1, nty, mty, inxn
-real(8) :: dr(3), dr2
-
-integer :: i,j,i1,j1
-logical :: isFound
-
-integer :: ti,tj,tk
-call system_clock(ti,tk)
-
-nbrlist(:,0) = 0
-
-!$omp parallel do default(shared) collapse(3) & 
-!$omp private(c1,c2,c3,ic,c4,c5,c6,n,n1,m,m1,nty,mty,inxn,dr,dr2) 
-DO c1=-nlayer, cc(1)-1+nlayer
-DO c2=-nlayer, cc(2)-1+nlayer
-DO c3=-nlayer, cc(3)-1+nlayer
-
-  m = header(c1, c2, c3)
-  do m1=1, nacell(c1, c2, c3)
-     mty = nint(atype(m))
-
-     do c4 = -1, 1
-     do c5 = -1, 1
-     do c6 = -1, 1
-        ic(1:3) = [c1, c2, c3] + [c4, c5, c6]
-
-        n = header(ic(1),ic(2),ic(3))
-        do n1=1, nacell(ic(1), ic(2), ic(3))
-
-           if(n/=m) then
-             nty = nint(atype(n))
-             inxn = ffp%inxn2(mty, nty)
-
-             dr(1:3) = pos(n,1:3) - pos(m,1:3) 
-             dr2 = sum(dr(1:3)*dr(1:3))
-
-             if(dr2<rc2(inxn)) then 
-                nbrlist(m, 0) = nbrlist(m, 0) + 1
-                nbrlist(m, nbrlist(m, 0)) = n
-             endif 
-           endif
-
-           n=llist(n) 
-        enddo
-     enddo; enddo; enddo
-
-     m = llist(m)
-  enddo
-enddo; enddo; enddo
-!$omp end parallel do 
-
-!--- to get the reverse information (i.e. from i,j1&j to i1), store <i1> into <nbrindx>.
-
-!$omp parallel do default(shared) private(i,i1,j,j1,isFound)
-do i=1, copyptr(6)
-   do i1 = 1, nbrlist(i,0)
-      j = nbrlist(i,i1)
-      isFound=.false.
-      do j1 = 1, nbrlist(j,0)
-         if(i == nbrlist(j,j1)) then
-            nbrindx(i,i1)=j1
-            isFound=.true.
-         endif
-      enddo
-      if(.not.isFound) &
-
-      !print'(a,i6,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
-      !     myid, i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
-      !! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
-      ! how do we print myid without passing mpi_var_type? 
-      print'(a,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
-           i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
-   enddo
-enddo
-!$omp end parallel do
-
-!--- error trap
-n=maxval(nbrlist(1:NATOMS,0))
-if(n > MAXNEIGHBS) then
-   !! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
-   ! how do we print myid without passing mpi_var_type? 
-   !write(6,'(a45,2i5)') "ERROR: overflow of max # in neighbor list, ", myid, n
-   write(6,'(a45,i5)') "ERROR: overflow of max # in neighbor list, ", n
-   call MPI_FINALIZE(ierr)
-   stop
-endif
-
-!! FIXME !! this function is called from FORCE() only and all functions under FORCE() doesn't need to use MPI. 
-! how do we print myid without passing mpi_var_type? 
-!!--- for array size stat
-!if(mod(nstep,rxp%pstep)==0) then
-!  maxas(nstep/pstep+1,2)=maxval(nbrlist(1:NATOMS,0))
-!endif
-
-call system_clock(tj,tk)
-it_timer(5)=it_timer(5)+(tj-ti)
-
-end subroutine
-
-!----------------------------------------------------------------------
-subroutine GetNonbondingPairList(rctap2, pos)
-use atoms; use ff_params 
-!----------------------------------------------------------------------
-implicit none
-
-real(8),intent(in) :: rctap2
-real(8),intent(in) :: pos(NBUFFER,3)
-
-integer :: c1,c2,c3,c4,c5,c6,i,j,m,n,mn,iid,jid
-integer :: l2g
-real(8) :: dr(3), dr2
-
-integer :: ti,tj,tk
-call system_clock(ti,tk)
-
-! reset non-bonding pair list
-nbplist(:,0)=0
-
-!$omp parallel do default(shared),private(c1,c2,c3,c4,c5,c6,i,j,m,n,mn,iid,jid,dr,dr2)
-do c1=0, nbcc(1)-1
-do c2=0, nbcc(2)-1
-do c3=0, nbcc(3)-1
-
-   i = nbheader(c1,c2,c3)
-   do m = 1, nbnacell(c1,c2,c3)
-
-      do mn = 1, nbnmesh
-         c4 = c1 + nbmesh(1,mn)
-         c5 = c2 + nbmesh(2,mn)
-         c6 = c3 + nbmesh(3,mn)
-
-         j = nbheader(c4,c5,c6)
-         do n=1, nbnacell(c4,c5,c6)
-
-            !if(i<j .or. NATOMS<j) then
-            if(i/=j) then
-               dr(1:3) = pos(i,1:3) - pos(j,1:3)
-               dr2 = sum(dr(1:3)*dr(1:3))
-
-               if(dr2<=rctap2) then
-                 nbplist(i,0)=nbplist(i,0)+1
-                 nbplist(i,nbplist(i,0))=j
-               endif
-
-            endif
-
-            j=nbllist(j)
-         enddo
-       enddo
-
-      i=nbllist(i)
-   enddo
-enddo; enddo; enddo
-!$omp end parallel do
-
-call system_clock(tj,tk)
-it_timer(15)=it_timer(15)+(tj-ti)
-
-end subroutine
-
-!----------------------------------------------------------------------
-subroutine angular_momentum(mass, atype, pos, v)
-use atoms; use ff_params; use mpi_vars
-!----------------------------------------------------------------------
-implicit none
-
-real(8),allocatable,dimension(:) :: mass
-real(8) :: atype(NBUFFER), pos(NBUFFER,3),v(NBUFFER,3)
-
-integer :: i,ity
-real(8) :: com(3), Gcom(3), intsr(3,3), Gintsr(3,3), intsr_i(3,3), angm(3), Gangm(3), angv(3), mm, Gmm
-real(8) :: dr(3), dv(3)
-
-!--- get center of mass
-com(:)=0.d0;     Gcom(:)=0.d0
-mm=0.d0; Gmm=0.d0
-
-do i=1, NATOMS
-   ity = nint(atype(i))
-   mm = mm + mass(ity)
-   com(1:3) = mass(ity)*pos(i,1:3)
-enddo
-
-call MPI_ALLREDUCE(mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(com, Gcom, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-Gcom(1:3) = Gcom(1:3)/Gmm
-
-
-!--- get the angular momentum and inertia tensor from the com
-angm(:)=0.d0;    Gangm(:)=0.d0
-intsr(:,:)=0.d0; Gintsr(:,:)=0.d0
-
-do i=1, NATOMS
-   dr(1:3) = pos(i,1:3) - Gcom(1:3)
-   
-   angm(1) = mass(ity)*( dr(2)*v(i,3)-dr(3)*v(i,2) )
-   angm(2) = mass(ity)*( dr(3)*v(i,1)-dr(1)*v(i,3) )
-   angm(3) = mass(ity)*( dr(1)*v(i,2)-dr(2)*v(i,1) )
-
-   intsr(1,1) = mass(ity)*( dr(2)**2+dr(3)**2 )
-   intsr(2,2) = mass(ity)*( dr(3)**2+dr(1)**2 )
-   intsr(3,3) = mass(ity)*( dr(1)**2+dr(2)**2 )
-
-   intsr(1,2) =-mass(ity)*( dr(1)*dr(2) )
-   intsr(1,3) =-mass(ity)*( dr(1)*dr(3) )
-   intsr(2,3) =-mass(ity)*( dr(2)*dr(3) )
-
-   intsr(2,1) = intsr(1,2)
-   intsr(3,1) = intsr(1,3)
-   intsr(3,2) = intsr(2,3)
-enddo
-
-call MPI_ALLREDUCE(angm, Gangm, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(intsr, Gintsr, 9, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-
-!--- get angular velocity
-call matinv(Gintsr, intsr_i)
-
-angv(1) = sum(intsr_i(1,1:3)*angm(1:3))
-angv(2) = sum(intsr_i(2,1:3)*angm(1:3))
-angv(3) = sum(intsr_i(3,1:3)*angm(1:3))
-
-
-!--- correct rotational motion wrt CoM.
-do i=1,NATOMS
-   dr(1:3) = pos(i,1:3) - Gcom(1:3)
-   dv(1) = angv(2)*dr(3) - angv(3)*dr(2)
-   dv(2) = angv(3)*dr(1) - angv(1)*dr(3)
-   dv(3) = angv(1)*dr(2) - angv(2)*dr(1)
-
-   v(i,1:3) = v(i,1:3) - dv(1:3)
-enddo
-
-end subroutine
-
-!--------------------------------------------------------------------------------------------------------------
-subroutine matinv(m1,m2)
-! get inverse of m1 and save to m2
-!--------------------------------------------------------------------------------------------------------------
-implicit none
-real(8) :: m1(3,3), m2(3,3), detm
-
-m2(1,1) = m1(2,2)*m1(3,3)-m1(2,3)*m1(3,2)
-m2(1,2) = m1(1,3)*m1(3,2)-m1(1,2)*m1(3,3)
-m2(1,3) = m1(1,2)*m1(2,3)-m1(1,3)*m1(2,2)
-m2(2,1) = m1(2,3)*m1(3,1)-m1(2,1)*m1(3,3)
-m2(2,2) = m1(1,1)*m1(3,3)-m1(1,3)*m1(3,1)
-m2(2,3) = m1(1,3)*m1(2,1)-m1(1,1)*m1(2,3)
-m2(3,1) = m1(2,1)*m1(3,2)-m1(2,2)*m1(3,1)
-m2(3,2) = m1(1,2)*m1(3,1)-m1(1,1)*m1(3,2)
-m2(3,3) = m1(1,1)*m1(2,2)-m1(1,2)*m1(2,1)
-
-detm = m1(1,1)*m1(2,2)*m1(3,3) + m1(1,2)*m1(2,3)*m1(3,1) &
-     + m1(1,3)*m1(2,1)*m1(3,2) - m1(1,3)*m1(2,2)*m1(3,1) &
-     - m1(1,2)*m1(2,1)*m1(3,3) - m1(1,1)*m1(2,3)*m1(3,2) 
-
-m2(:,:) = m2(:,:)/detm
-
-end subroutine
-
-!--------------------------------------------------------------------------------------------------------------
-function l2g(atype)
-implicit none
-!convert Local ID to Global ID 
-!--------------------------------------------------------------------------------------------------------------
-real(8),intent(IN) :: atype
-integer :: l2g,ity
-
-ity = nint(atype)
-l2g = nint((atype-ity)*1d13)
-
-return
-end function
-
-!--------------------------------------------------------------------------------------------------------------
-subroutine xu2xs(rreal, rnorm, nmax)
-! update normalized coordinate from real coordinate. Subtract obox to make them local. 
-use atoms
-real(8),intent(in) :: rreal(NBUFFER,3)
-real(8),intent(out) :: rnorm(NBUFFER,3)
-integer,intent(in) :: nmax
-
-!--------------------------------------------------------------------------------------------------------------
-real(8) :: rr(3)
-
-do i=1,nmax
-   rr(1:3) = rreal(i,1:3)
-   rnorm(i,1)=sum(HHi(1,1:3)*rr(1:3))
-   rnorm(i,2)=sum(HHi(2,1:3)*rr(1:3))
-   rnorm(i,3)=sum(HHi(3,1:3)*rr(1:3))
-   rnorm(i,1:3) = rnorm(i,1:3) - OBOX(1:3)
-enddo
-
-end subroutine
-
-!--------------------------------------------------------------------------------------------------------------
-subroutine xs2xu(rnorm,rreal,nmax)
-! update real coordinate from normalized coordinate
-use atoms
-!--------------------------------------------------------------------------------------------------------------
-real(8),intent(in) :: rnorm(NBUFFER,3)
-real(8),intent(out) :: rreal(NBUFFER,3)
-integer,intent(in) :: nmax
-
-real(8) :: rr(3)
-
-do i=1,nmax 
-   rr(1:3) = rnorm(i,1:3) + OBOX(1:3)
-   rreal(i,1)=sum(HH(1,1:3,0)*rr(1:3))
-   rreal(i,2)=sum(HH(2,1:3,0)*rr(1:3))
-   rreal(i,3)=sum(HH(3,1:3,0)*rr(1:3))
-enddo
-
-end subroutine
-
-!-----------------------------------------------------------------------
-subroutine ScaleTemperature(ffp, mpt, treq, atype, v)
-use atoms; use ff_params; use mpi_vars
-!-----------------------------------------------------------------------
-implicit none
-
-type(forcefield_params),intent(in) :: ffp
-type(mpi_var_type),intent(in) :: mpt
-real(8),intent(in) :: treq
-
-real(8) :: atype(NBUFFER), v(NBUFFER,3)
-
-integer :: i,ity
-real(8) :: Ekinetic, ctmp
-
-do i=1, NATOMS
-   ity=nint(atype(i))
-   Ekinetic=0.5d0*ffp%mass(ity)*sum(v(i,1:3)*v(i,1:3))
-   ctmp = (treq*UTEMP0)/( Ekinetic*UTEMP )
-   v(i,1:3)=sqrt(ctmp)*v(i,1:3)
-enddo
-
-call LinearMomentum(ffp, mpt, atype, v)
-
-return
-end
-
-!-----------------------------------------------------------------------
-subroutine LinearMomentum(ffp, mpt, atype, v)
-use atoms; use ff_params; use mpi_vars
-!-----------------------------------------------------------------------
-implicit none
-
-type(mpi_var_type),intent(in) :: mpt
-type(forcefield_params),intent(in) :: ffp
-real(8) :: atype(NBUFFER), v(NBUFFER,3)
-
-integer :: i,ity
-real(8) :: mm,vCM(3),sbuf(4),rbuf(4)
-
-!--- get the local momentum and mass.
-vCM(:)=0.d0;  mm = 0.d0
-do i=1, NATOMS
-   ity = nint(atype(i))
-   vCM(1:3)=vCM(1:3) + ffp%mass(ity)*v(i,1:3)
-   mm = mm + ffp%mass(ity)
-enddo
-
-sbuf(1)=mm; sbuf(2:4)=vCM(1:3)
-call MPI_ALLREDUCE(sbuf, rbuf, size(sbuf), MPI_DOUBLE_PRECISION, MPI_SUM, mpt%mycomm, ierr)
-mm=rbuf(1); vCM(1:3)=rbuf(2:4)
-
-!--- get the global momentum
-vCM(:)=vCM(:)/mm
-
-!--- set the total momentum to be zero 
-do i=1, NATOMS
-   v(i,1:3) = v(i,1:3) - vCM(1:3)
-enddo
-
-return
-end
-

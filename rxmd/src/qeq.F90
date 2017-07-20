@@ -31,11 +31,17 @@ call allocatord1d(hsht,1,NBUFFER)
 call allocatord2d(hessian,1,MAXNEIGHBS10,1,NBUFFER)
 qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
 
+!--- Varaiable for extended Lagrangian method
+call allocatord1d(qtfp,1,NBUFFER)
+call allocatord1d(qtfv,1,NBUFFER)
+qtfp(:)=0.d0; qtfv(:)=0.d0
+
 end subroutine
 
 !------------------------------------------------------------------------------
-subroutine QEq(ffp, avs, mpt, rxp)
-use atom_vars; use atoms; use rxmd_params; use mpi_vars; use ff_params; use mpi_vars
+subroutine QEq(ffp, avs, mpt, rxp, mcx)
+use atom_vars; use md_context; use rxmd_params; use mpi_vars; use ff_params; use mpi_vars
+use list_funcs; 
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -51,8 +57,9 @@ type(forcefield_params),intent(in) :: ffp
 type(atom_var_type),intent(inout) ::avs 
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
+type(md_context_type),intent(inout) :: mcx
 
-integer :: i,j,l2g
+integer :: i,j,l2g, nstep_qeq
 integer :: i1,j1,k1, nmax
 real(8) :: Gnew(2), Gold(2) 
 real(8) :: Est, GEst1, GEst2, g_h(2), h_hsh(2)
@@ -62,9 +69,13 @@ real(8) :: ssum, tsum, mu
 real(8) :: qsum, gqsum
 real(8) :: QCopyDr(3)
 
+integer :: NATOMS, ierr
+
 call system_clock(i1,k1)
 
-QCopyDr(1:3)=ffp%rctap/(/lata,latb,latc/)
+NATOMS=mcx%NATOMS
+
+QCopyDr(1:3)=ffp%rctap/(/mcx%lata,mcx%latb,mcx%latc/)
 
 !--- Initialize <s> vector with current charge and <t> vector with zero.
 !--- isQEq==1 Normal QEq, isQEq==2 Extended Lagrangian method, DEFAULT skip QEq 
@@ -102,15 +113,15 @@ open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-call COPYATOMS(avs, mpt, MODE_COPY, QCopyDr)
-call LINKEDLIST(avs%atype, avs%pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
+call COPYATOMS(mcx, avs, mpt, MODE_COPY, QCopyDr)
+call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%nblcsize, mcx%nbheader, mcx%nbllist, mcx%nbnacell, mcx%nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
 
 #ifdef QEQDUMP 
 do i=1, NATOMS
-   do j1=1,nbplist(i,0)
-      j = nbplist(i,j1)
+   do j1=1,mcx%nbplist(i,0)
+      j = mcx%nbplist(i,j1)
       write(91,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian(j1,i)
    enddo
 enddo
@@ -118,14 +129,14 @@ enddo
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(avs, mpt, MODE_QCOPY1, QCopyDr)
+call COPYATOMS(mcx, avs, mpt, MODE_QCOPY1, QCopyDr)
 call get_gradient(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
 hs(1:NATOMS) = gs(1:NATOMS)
 ht(1:NATOMS) = gt(1:NATOMS)
 
-call COPYATOMS(avs, mpt, MODE_QCOPY2, QCopyDr)
+call COPYATOMS(mcx, avs, mpt, MODE_QCOPY2, QCopyDr)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -184,7 +195,7 @@ do nstep_qeq=0, nmax-1
   avs%q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(avs, mpt, MODE_QCOPY1, QCopyDr)
+  call COPYATOMS(mcx, avs, mpt, MODE_QCOPY1, QCopyDr)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -195,15 +206,17 @@ do nstep_qeq=0, nmax-1
   ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
 
 !--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(avs, mpt, MODE_QCOPY2, QCopyDr)
+  call COPYATOMS(mcx, avs, mpt, MODE_QCOPY2, QCopyDr)
 
 enddo
 
 call system_clock(j1,k1)
-it_timer(1)=it_timer(1)+(j1-i1)
+mcx%it_timer(1)=mcx%it_timer(1)+(j1-i1)
 
 ! save # of QEq iteration 
-it_timer(24)=it_timer(24)+nstep_qeq
+mcx%it_timer(24)=mcx%it_timer(24)+nstep_qeq
+
+mcx%nstep_qeq=nstep_qeq
 
 #ifdef QEQDUMP 
 close(91)
@@ -215,7 +228,7 @@ CONTAINS
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine qeq_initialize()
-use atoms; use ff_params; use MemoryAllocator
+use md_context; use ff_params; use MemoryAllocator
 ! This subroutine create a neighbor list with cutoff length = 10[A] and save the hessian into <hessian>.  
 ! <nbrlist> and <hessian> will be used for different purpose later.
 !-----------------------------------------------------------------------------------------------------------------------
@@ -230,26 +243,26 @@ integer :: ti,tj,tk
 
 call system_clock(ti,tk)
 
-nbplist(:,0) = 0
+mcx%nbplist(:,0) = 0
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,c4,c5,c6,dr,dr2,drtb,itb,inxn)
-do c1=0, nbcc(1)-1
-do c2=0, nbcc(2)-1
-do c3=0, nbcc(3)-1
+do c1=0, mcx%nbcc(1)-1
+do c2=0, mcx%nbcc(2)-1
+do c3=0, mcx%nbcc(3)-1
 
-   i = nbheader(c1,c2,c3)
-   do m = 1, nbnacell(c1,c2,c3)
+   i = mcx%nbheader(c1,c2,c3)
+   do m = 1, mcx%nbnacell(c1,c2,c3)
 
    ity=nint(avs%atype(i))
 
-   do mn = 1, nbnmesh
-      c4 = c1 + nbmesh(1,mn)
-      c5 = c2 + nbmesh(2,mn)
-      c6 = c3 + nbmesh(3,mn)
+   do mn = 1, mcx%nbnmesh
+      c4 = c1 + mcx%nbmesh(1,mn)
+      c5 = c2 + mcx%nbmesh(2,mn)
+      c6 = c3 + mcx%nbmesh(3,mn)
 
-      j = nbheader(c4,c5,c6)
-      do n=1, nbnacell(c4,c5,c6)
+      j = mcx%nbheader(c4,c5,c6)
+      do n=1, mcx%nbnacell(c4,c5,c6)
 
          if(i/=j) then
             dr(1:3) = avs%pos(i,1:3) - avs%pos(j,1:3)
@@ -261,44 +274,44 @@ do c3=0, nbcc(3)-1
 
 !--- make a neighbor list with cutoff length = 10[A]
 !$omp atomic
-               nbplist(i,0) = nbplist(i,0) + 1
-               nbplist(i,nbplist(i,0)) = j
+               mcx%nbplist(i,0) = mcx%nbplist(i,0) + 1
+               mcx%nbplist(i,mcx%nbplist(i,0)) = j
 
 !--- get table index and residual value
-               itb = int(dr2*UDRi)
-               drtb = dr2 - itb*UDR
-               drtb = drtb*UDRi
+               itb = int(dr2*mcx%UDRi)
+               drtb = dr2 - itb*mcx%UDR
+               drtb = drtb*mcx%UDRi
 
                inxn = ffp%inxn2(ity, jty)
 
-               hessian(nbplist(i,0),i) = (1.d0-drtb)*TBL_Eclmb_QEq(itb,inxn) + drtb*TBL_Eclmb_QEq(itb+1,inxn)
+               hessian(mcx%nbplist(i,0),i) = (1.d0-drtb)*mcx%TBL_Eclmb_QEq(itb,inxn) + drtb*mcx%TBL_Eclmb_QEq(itb+1,inxn)
             endif
          endif
 
-         j=nbllist(j)
+         j=mcx%nbllist(j)
       enddo
    enddo !   do mn = 1, nbnmesh
 
-   i=nbllist(i)
+   i=mcx%nbllist(i)
    enddo
 enddo; enddo; enddo
 !$omp end parallel do
 
 !--- for array size stat
-if(mod(nstep,rxp%pstep)==0) then
-  nn=maxval(nbplist(1:NATOMS,0))
-  i=nstep/rxp%pstep+1
-  maxas(i,3)=nn
+if(mod(mcx%nstep,rxp%pstep)==0) then
+  nn=maxval(mcx%nbplist(1:NATOMS,0))
+  i=mcx%nstep/rxp%pstep+1
+  mcx%maxas(i,3)=nn
 endif
 
 call system_clock(tj,tk)
-it_timer(16)=it_timer(16)+(tj-ti)
+mcx%it_timer(16)=mcx%it_timer(16)+(tj-ti)
 
 end subroutine 
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine get_hsh(Est)
-use atoms; use ff_params 
+use md_context; use ff_params 
 ! This subroutine updates hessian*cg array <hsh> and the electrostatic energy <Est>.  
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
@@ -320,8 +333,8 @@ do i=1, NATOMS
 
    Est = Est + ffp%chi(ity)*avs%q(i) + 0.5d0*eta_ity*avs%q(i)*avs%q(i)
 
-   do j1 = 1, nbplist(i,0)
-      j = nbplist(i,j1)
+   do j1 = 1, mcx%nbplist(i,0)
+      j = mcx%nbplist(i,j1)
       hshs(i) = hshs(i) + hessian(j1,i)*hs(j)
       hsht(i) = hsht(i) + hessian(j1,i)*ht(j)
 !--- get half of potential energy, then sum it up if atoms are resident.
@@ -334,7 +347,7 @@ enddo
 !$omp end parallel do
 
 call system_clock(tj,tk)
-it_timer(18)=it_timer(18)+(tj-ti)
+mcx%it_timer(18)=mcx%it_timer(18)+(tj-ti)
 
 end subroutine 
 
@@ -342,7 +355,7 @@ end subroutine
 subroutine get_gradient(Gnew)
 ! Update gradient vector <g> and new residue <Gnew>
 !-----------------------------------------------------------------------------------------------------------------------
-use atoms; use ff_params
+use md_context; use ff_params
 implicit none
 real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)
@@ -358,8 +371,8 @@ do i=1,NATOMS
 
    gssum=0.d0
    gtsum=0.d0
-   do j1=1, nbplist(i,0) 
-      j = nbplist(i,j1)
+   do j1=1, mcx%nbplist(i,0) 
+      j = mcx%nbplist(i,j1)
       gssum = gssum + hessian(j1,i)*qs(j)
       gtsum = gtsum + hessian(j1,i)*qt(j)
    enddo
@@ -378,7 +391,7 @@ ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
 call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
 
 call system_clock(tj,tk)
-it_timer(19)=it_timer(19)+(tj-ti)
+mcx%it_timer(19)=mcx%it_timer(19)+(tj-ti)
 
 end subroutine
 

@@ -31,8 +31,8 @@ call allocatord1d(dDlp,1,NBUFFER)
 end subroutine
 
 !----------------------------------------------------------------------------------------------------------------------
-subroutine FORCE(ffp, mpt, bos, avs)
-use atom_vars; use mpi_vars; use ff_params; use atoms; use bo
+subroutine FORCE(ffp, mpt, bos, avs, mcx)
+use atom_vars; use mpi_vars; use ff_params; use md_context; use bo; use support_funcs; use list_funcs
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -40,16 +40,14 @@ type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt
 type(bo_var_type),intent(inout) :: bos
 type(atom_var_type),intent(inout) :: avs 
-
-real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array dimension matches
+type(md_context_type),intent(inout) :: mcx
 
 integer :: i, j, k
-integer :: l2g
 real(8) :: dr(3)
 
 bos%ccbnd(:) = 0.d0
 avs%f(:,:) = 0.d0
-PE(:) = 0.d0
+mcx%PE(:) = 0.d0
 
 #ifdef STRESS
 !--- stress components have to be transfered back to the original atoms, as the force components. 
@@ -57,37 +55,37 @@ astr(:,:) = 0.d0
 #endif
 
 !--- cache atoms and create linkedlist for bonding and non-bonding neighbor lists. 
-call COPYATOMS(avs, mpt, MODE_COPY, NMINCELL*lcsize(1:3))
+call COPYATOMS(mcx, avs, mpt, MODE_COPY, NMINCELL*mcx%lcsize(1:3))
 
-call LINKEDLIST(avs%atype, avs%pos, lcsize, header, llist, nacell, cc, MAXLAYERS)
-call LINKEDLIST(avs%atype, avs%pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
+call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%lcsize, mcx%header, mcx%llist, mcx%nacell, mcx%cc, MAXLAYERS)
+call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%nblcsize, mcx%nbheader, mcx%nbllist, mcx%nbnacell, mcx%nbcc, MAXLAYERS_NB)
 
-call NEIGHBORLIST(ffp, NMINCELL, avs%atype, avs%pos)
-call GetNonbondingPairList(ffp%rctap2, avs%pos)
+call NEIGHBORLIST(mcx, ffp, NMINCELL, avs%atype, avs%pos)
+call GetNonbondingPairList(mcx, ffp%rctap2, avs%pos)
 
 !--- get atom type and global ids
-do i=1, NBUFFER
+do i=1, mcx%NBUFFER
    itype(i)=nint(avs%atype(i))
 enddo
-do i=1, NBUFFER
+do i=1, mcx%NBUFFER
    gtype(i)=l2g(avs%atype(i))
 enddo
 
 !$omp parallel default(shared)
-CALL BOCALC(bos, ffp, NMINCELL, avs%atype, avs%pos)
+CALL BOCALC(bos, ffp, NMINCELL, avs%atype, avs%pos, mcx, mcx%copyptr(6))
 !$omp end parallel
 !$omp parallel default(shared)
-CALL ENbond(ffp, avs%atype, avs%pos, avs%q, avs%f)
-CALL Ebond(ffp, bos, avs%atype, avs%pos, avs%f)
-CALL Elnpr(ffp, bos, avs%atype, avs%pos, avs%f)
-CALL Ehb(ffp, bos, avs%atype, avs%pos, avs%f)
-CALL E3b(ffp, bos, avs%atype, avs%pos, avs%f)
-CALL E4b(ffp, bos, avs%atype, avs%pos, avs%f)
+CALL ENbond(mcx, ffp, avs%atype, avs%pos, avs%q, avs%f, mcx%PE)
+CALL Ebond(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
+CALL Elnpr(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
+CALL Ehb(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
+CALL E3b(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
+CALL E4b(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
 !$omp end parallel 
 
-CALL ForceBondedTerms(NMINCELL, bos, avs%pos, avs%f)
+CALL ForceBondedTerms(NMINCELL, mcx, bos, avs%pos, avs%f)
 
-CALL COPYATOMS(avs, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
+CALL COPYATOMS(mcx, avs, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
 
 #ifdef RFDUMP
 open(81,file="rfdump"//trim(rankToString(myid))//".txt")
@@ -113,26 +111,27 @@ return
 end subroutine
 
 !----------------------------------------------------------------------
-subroutine ForceBondedTerms(nlayer, bos, pos, f)
-use atoms; use bo
+subroutine ForceBondedTerms(nlayer, mcx, bos, pos, f)
+use md_context; use bo
 !----------------------------------------------------------------------
 implicit none
 integer,intent(IN) :: nlayer
 integer :: c1,c2,c3 , i,i1,j,j1
 real(8) :: dr(3), ff(3)
 
+type(md_context_type),intent(inout) :: mcx
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in) :: pos(:,:)
+real(8),intent(inout) :: f(:,:)
 
 integer :: ti,tj,tk
 
 call system_clock(ti,tk)
 
-do i=1, copyptr(6)
+do i=1, mcx%copyptr(6)
 
-  do j1=1, nbrlist(i,0)
-     j=nbrlist(i,j1)
+  do j1=1, mcx%nbrlist(i,0)
+     j=mcx%nbrlist(i,j1)
      dr(1:3) = pos(i,1:3) - pos(j,1:3)
      ff(1:3) = bos%ccbnd(i)*bos%dBOp(i,j1)*dr(1:3)
      f(i,1:3) = f(i,1:3) - ff(1:3)
@@ -149,20 +148,22 @@ do i=1, copyptr(6)
 enddo
 
 call system_clock(tj,tk)
-it_timer(13)=it_timer(13)+(tj-ti)
+mcx%it_timer(13)=mcx%it_timer(13)+(tj-ti)
 end subroutine
 
 
 !-------------------------------------------------------------------------------------
-subroutine Elnpr(ffp, bos, atype, pos, f)
-use ff_params; use bo; use atoms
+subroutine Elnpr(mcx, ffp, bos, atype, pos, f, PE)
+use ff_params; use bo; use md_context
 !-------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 integer :: i,i1,j,j1,ity, jty, inxn, idEh
 real(8) :: coeff(3)
@@ -194,7 +195,7 @@ call system_clock(ti,tk)
 
 !=== preparation ==============================================================
 !$omp do 
-do i = 1, copyptr(6)
+do i = 1, mcx%copyptr(6)
    ity = itype(i)
 
    if(ity==0) cycle
@@ -225,13 +226,13 @@ enddo
 !$omp end do
 
 !$omp do reduction(+:PE)
-do i=1, NATOMS
+do i=1, mcx%NATOMS
    ity = itype(i)
 
    sum_ovun1 = 0.d0
    sum_ovun2 = 0.d0
-   do j1 = 1, nbrlist(i,0)
-      j = nbrlist(i, j1)
+   do j1 = 1, mcx%nbrlist(i,0)
+      j = mcx%nbrlist(i, j1)
       jty = itype(j)
       inxn = ffp%inxn2(ity,jty)
       sum_ovun1 = sum_ovun1 + ffp%povun1(inxn)*ffp%Desig(inxn)*bos%BO(0,i,j1)
@@ -293,8 +294,8 @@ do i=1, NATOMS
 !          CEunder(:)=0.d0; PE(4)=0.d0
 
 !--- Force Calculation
-   do j1 = 1, nbrlist(i,0) 
-      j = nbrlist(i, j1) 
+   do j1 = 1, mcx%nbrlist(i,0) 
+      j = mcx%nbrlist(i, j1) 
       jty = itype(j)
       inxn = ffp%inxn2(ity,jty)
 
@@ -312,11 +313,11 @@ do i=1, NATOMS
       coeff(2) = CElp_b + CElp_bpp
       coeff(3) = CElp_b + CElp_bpp 
 
-      i1=nbrindx(i,j1)
+      i1=mcx%nbrindx(i,j1)
       call ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
 
       CElp_d  = CEover(6) + CEunder(5)
-      call ForceD(j, CElp_d, bos, pos, f)
+      call ForceD(j, CElp_d, mcx, bos, pos, f)
    enddo
 
 enddo ! i-loop
@@ -324,22 +325,24 @@ enddo ! i-loop
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(9)=it_timer(9)+(tj-ti)
+mcx%it_timer(9)=mcx%it_timer(9)+(tj-ti)
 !$omp end master
 
 
 END subroutine
 
 !------------------------------------------------------------------------------------
-subroutine E3b(ffp, bos, atype, pos, f)
-use ff_params; use bo; use atoms
+subroutine E3b(mcx, ffp, bos, atype, pos, f, PE)
+use ff_params; use bo; use md_context
 !------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 integer :: i,j,k, i1,j1,k1, ity,jty,kty, inxn, n,n1
 
@@ -374,12 +377,12 @@ call system_clock(ti,tk)
 !$omp end master
 
 !$omp do schedule(guided) reduction(+:PE)
-do j=1, NATOMS
+do j=1, mcx%NATOMS
    jty = itype(j)
 
    sum_BO8 = 0.d0
    sum_SBO1 = 0.d0
-   do n1=1, nbrlist(j,0)
+   do n1=1, mcx%nbrlist(j,0)
       sum_BO8 = sum_BO8 - bos%BO(0,j,n1)**8.d0
       sum_SBO1 = sum_SBO1 + bos%BO(2,j,n1) + bos%BO(3,j,n1)
    enddo
@@ -387,18 +390,18 @@ do j=1, NATOMS
 
    delta_ang = bos%delta(j) + ffp%Val(jty) - ffp%Valangle(jty)   
 
-   do i1=1, nbrlist(j,0)-1
+   do i1=1, mcx%nbrlist(j,0)-1
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
       BOij = bos%BO(0,j,i1) - cutof2_esub
       if(BOij>0.d0) then ! react.f, line 4827 
-      i=nbrlist(j,i1)
+      i=mcx%nbrlist(j,i1)
       ity = itype(i)
 
       rij(1:3) = pos(i,1:3) - pos(j,1:3)
       rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
 
-      do k1=i1+1, nbrlist(j,0)
+      do k1=i1+1, mcx%nbrlist(j,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
          BOjk = bos%BO(0,j,k1)-cutof2_esub
@@ -406,7 +409,7 @@ do j=1, NATOMS
          if(BOjk>0.d0) then !react.f, line 4830
          if(bos%BO(0,j,i1)*bos%BO(0,j,k1)>cutof2_esub) then !react.f, line 4831
 
-         k=nbrlist(j,k1)
+         k=mcx%nbrlist(j,k1)
          kty = itype(k)
 
          rjk(1:3) = pos(j,1:3) - pos(k,1:3)
@@ -538,22 +541,22 @@ do j=1, NATOMS
             CE3body_a = CEval(8)
 
 !--- Force calculation
-            j1 = nbrindx(j, i1)
-            call ForceB(i,j1, j,i1, CE3body_b(1), bos, pos, f) !BO_ij
+            j1 = mcx%nbrindx(j, i1)
+            call ForceB(i,j1, j,i1, CE3body_b(1), mcx, bos, pos, f) !BO_ij
 
-            j1 = nbrindx(j, k1)
-            call ForceB(j,k1, k,j1, CE3body_b(2), bos, pos, f) !BO_jk
+            j1 = mcx%nbrindx(j, k1)
+            call ForceB(j,k1, k,j1, CE3body_b(2), mcx, bos, pos, f) !BO_jk
 
-            do n1=1, nbrlist(j,0)
+            do n1=1, mcx%nbrlist(j,0)
                coeff(1:3) = CE3body_d(1) + CEval(6)*bos%BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
-               n  = nbrlist(j, n1)
-               j1 = nbrindx(j, n1)
+               n  = mcx%nbrlist(j, n1)
+               j1 = mcx%nbrindx(j, n1)
                call ForceBbo(j,n1, n,j1, coeff, bos, pos, f) 
             enddo
 
-            call ForceD(i, CE3body_d(2), bos, pos, f)
-            call ForceD(k, CE3body_d(3), bos, pos, f)
+            call ForceD(i, CE3body_d(2), mcx, bos, pos, f)
+            call ForceD(k, CE3body_d(3), mcx, bos, pos, f)
 
             call ForceA3(CE3body_a, i, j, k, rij, rjk, pos, f) 
 
@@ -568,13 +571,13 @@ enddo ! j-loop
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(11)=it_timer(11)+(tj-ti)
+mcx%it_timer(11)=mcx%it_timer(11)+(tj-ti)
 !$omp end master
 
 END subroutine
 !----------------------------------------------------------------------------------------------------------------------
-subroutine Ehb(ffp, bos, atype, pos, f)
-use ff_params; use bo; use atoms
+subroutine Ehb(mcx, ffp, bos, atype, pos, f, PE)
+use ff_params; use bo; use md_context
 ! Note: 02-09-05 <kn>
 ! To find out hydrogen bonding combinations, <vnhbp> (one atom parameter, 2nd row, 8th column) is used to 
 ! identify whether an atoms is hydrogen or not, <vnhbp>=1 for H, <vnhbp>=2 for O,N,S and <vnhbp>=0 for others. 
@@ -586,10 +589,12 @@ use ff_params; use bo; use atoms
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 ! <rchb>    cutoff length for atom j2 and i2 which is 10[A]
 
@@ -607,18 +612,18 @@ call system_clock(ti,tk)
 !$omp end master
 
 !$omp do schedule(dynamic) reduction(+:PE)
-do i=1, NATOMS
+do i=1, mcx%NATOMS
    ity = itype(i)
 
-   do j1=1, nbrlist(i,0)
-      j = nbrlist(i,j1)
+   do j1=1, mcx%nbrlist(i,0)
+      j = mcx%nbrlist(i,j1)
       jty = itype(j)
 
       if( (jty==2) .and. (bos%BO(0,i,j1)>MINBO0) ) then
 
-          do kk=1, nbplist(i,0)
+          do kk=1, mcx%nbplist(i,0)
 
-            k = nbplist(i,kk)
+            k = mcx%nbplist(i,kk)
 
             kty = itype(k)
 
@@ -658,8 +663,8 @@ do i=1, NATOMS
                   CEhb(2) =-0.5d0*ffp%phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*cos_xhz1
                   CEhb(3) =-PEhb*ffp%phb3(inxnhb)*( -ffp%r0hb(inxnhb)/rjk(0)**2 + 1.d0/ffp%r0hb(inxnhb) )*(1.d0/rjk(0))
 
-                  i1 = nbrindx(i,j1)
-                  call ForceB(i,j1, j,i1, CEhb(1), bos, pos, f)
+                  i1 = mcx%nbrindx(i,j1)
+                  call ForceB(i,j1, j,i1, CEhb(1), mcx, bos, pos, f)
                   call ForceA3(CEhb(2), i,j,k, rij, rjk, pos, f)
    
                   ff(1:3) = CEhb(3)*rjk(1:3)
@@ -686,7 +691,7 @@ do i=1, NATOMS
                endif ! if(rik2<rchb2)
             endif
 
-        enddo !do kk=1, nbplist(i,0)
+        enddo !do kk=1, mcx%nbplist(i,0)
 
       endif ! if(BO(0,j,i1)>MINBO0)
    enddo 
@@ -695,14 +700,14 @@ enddo
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(10)=it_timer(10)+(tj-ti)
+mcx%it_timer(10)=mcx%it_timer(10)+(tj-ti)
 !$omp end master
 
 end subroutine
 
 !----------------------------------------------------------------------------------------------------------
-subroutine ENbond(ffp, atype, pos, q, f)
-use ff_params; use atoms
+subroutine ENbond(mcx, ffp, atype, pos, q, f, PE)
+use ff_params; use md_context
 !----------------------------------------------------------------------------------------------------------
 !  This subroutine calculates the energy and the forces due to the Van der Waals and Coulomb terms 
 !----------------------------------------------------------------------------------------------------------
@@ -710,9 +715,11 @@ implicit none
 integer :: i, j,j1, ity,jty
 integer :: c1,c2,c3, m
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3), q(NBUFFER)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:), q(:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 real(8) :: PEvdw, PEclmb, ff(3)
 real(8) :: dr(0:3), dr2
@@ -732,15 +739,15 @@ call system_clock(ti,tk)
 !$omp end master
 
 !$omp do schedule(guided) reduction(+:PE)
-do i=1, NATOMS
+do i=1, mcx%NATOMS
 
    ity = itype(i) 
    iid = gtype(i)
    
    PE(13) = PE(13) + CEchrge*(ffp%chi(ity)*q(i) + 0.5d0*ffp%eta(ity)*q(i)**2)
 
-    do j1 = 1, nbplist(i,0) 
-         j = nbplist(i,j1)
+    do j1 = 1, mcx%nbplist(i,0) 
+         j = mcx%nbplist(i,j1)
 
          jid = gtype(j)
 
@@ -758,20 +765,20 @@ do i=1, NATOMS
 
 !--- get table index and residual value
 !                  itb = int(dr(0)*UDRi)
-               itb = int(dr2*UDRi)
+               itb = int(dr2*mcx%UDRi)
                itb1 = itb+1
-               drtb = dr2 - itb*UDR
-               drtb = drtb*UDRi
+               drtb = dr2 - itb*mcx%UDR
+               drtb = drtb*mcx%UDRi
                drtb1= 1.d0-drtb
 
 !--- van del Waals:
-               PEvdw  = drtb1*TBL_Evdw(0,itb,inxn)  + drtb*TBL_Evdw(0,itb1,inxn)
-               CEvdw  = drtb1*TBL_Evdw(1,itb,inxn)  + drtb*TBL_Evdw(1,itb1,inxn)
+               PEvdw  = drtb1*mcx%TBL_Evdw(0,itb,inxn)  + drtb*mcx%TBL_Evdw(0,itb1,inxn)
+               CEvdw  = drtb1*mcx%TBL_Evdw(1,itb,inxn)  + drtb*mcx%TBL_Evdw(1,itb1,inxn)
 !--- Coulomb:
                qij = q(i)*q(j)
-               PEclmb = drtb1*TBL_Eclmb(0,itb,inxn) + drtb*TBL_Eclmb(0,itb1,inxn)
+               PEclmb = drtb1*mcx%TBL_Eclmb(0,itb,inxn) + drtb*mcx%TBL_Eclmb(0,itb1,inxn)
                PEclmb = PEclmb*qij
-               CEclmb = drtb1*TBL_Eclmb(1,itb,inxn) + drtb*TBL_Eclmb(1,itb1,inxn)
+               CEclmb = drtb1*mcx%TBL_Eclmb(1,itb,inxn) + drtb*mcx%TBL_Eclmb(1,itb1,inxn)
                CEclmb = CEclmb*qij
 
                PE(11) = PE(11) + PEvdw
@@ -801,30 +808,32 @@ do i=1, NATOMS
             endif
          endif
 
-    enddo  !do j1 = 1, nbplist(i,0) 
+    enddo  !do j1 = 1, mcx%nbplist(i,0) 
 enddo
 !$omp end do
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(7)=it_timer(7)+(tj-ti)
+mcx%it_timer(7)=mcx%it_timer(7)+(tj-ti)
 !$omp end master
 
 END subroutine 
 
 !-----------------------------------------------------------------------------------------------------------------------
-subroutine Ebond(ffp, bos, atype, pos, f)
-use ff_params; use bo; use atoms
+subroutine Ebond(mcx, ffp, bos, atype, pos, f, PE)
+use ff_params; use bo; use md_context
 !-----------------------------------------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 integer :: i,j, i1,j1, ity, jty, inxn
-real(8) :: exp_be12,  CEbo, PEbo, coeff(3)
+real(8) :: exp_be12,  CEbo, PEbo, sum_PE1, coeff(3)
 integer :: iid,jid
 integer :: ti,tj,tk
 
@@ -833,14 +842,14 @@ call system_clock(ti,tk)
 !$omp end master
 
 !$omp do reduction(+:PE)
-do i=1, NATOMS
+do i=1, mcx%NATOMS
 
    ity = itype(i)
 
    iid = gtype(i)
-   do j1 = 1, nbrlist(i,0)
+   do j1 = 1, mcx%nbrlist(i,0)
 
-      j = nbrlist(i,j1)
+      j = mcx%nbrlist(i,j1)
       jid = gtype(j)
       if(jid<iid) then
 
@@ -854,9 +863,11 @@ do i=1, NATOMS
         PE(1) = PE(1) + PEbo
 
         CEbo = -ffp%Desig(inxn)*exp_be12*( 1.d0 - ffp%pbe1(inxn)*ffp%pbe2(inxn)*bos%BO(1,i,j1)**ffp%pbe2(inxn) )
-        coeff(1:3)= (/ CEbo, -ffp%Depi(inxn), -ffp%Depipi(inxn) /)
+        coeff(1)= CEbo
+        coeff(2)= -ffp%Depi(inxn)
+        coeff(3)= -ffp%Depipi(inxn)
 
-        i1 = nbrindx(i,j1)
+        i1 = mcx%nbrindx(i,j1)
         call ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
 
       endif
@@ -867,21 +878,23 @@ enddo
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(8)=it_timer(8)+(tj-ti)
+mcx%it_timer(8)=mcx%it_timer(8)+(tj-ti)
 !$omp end master
 
 end subroutine
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine E4b(ffp, bos, atype, pos, f)
-use atoms; use ff_params; use bo
+subroutine E4b(mcx, ffp, bos, atype, pos, f, PE)
+use md_context; use ff_params; use bo
 !--------------------------------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: atype(:), pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
+real(8),intent(inout) :: PE(0:13)
 
 integer :: i,j,k,l, i1,j1,k1,l1, k2, ity,jty,kty,lty, inxn
 
@@ -912,19 +925,19 @@ call system_clock(ti,tk)
 !$omp end master
 
 !$omp do schedule(guided) reduction(+:PE)
-do j=1,NATOMS
+do j=1,mcx%NATOMS
 
   jty = itype(j)
   delta_ang_j = bos%delta(j) + ffp%Val(jty) - ffp%Valangle(jty)
   jid = gtype(j)
 
-  do k1=1, nbrlist(j,0) 
+  do k1=1, mcx%nbrlist(j,0) 
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
      BOjk = bos%BO(0,j,k1) - cutof2_esub
      if(bos%BO(0,j,k1) > cutof2_esub) then         !poten.f,line 1829,1830
 
-        k = nbrlist(j,k1)
+        k = mcx%nbrlist(j,k1)
         kid = gtype(k)
 
         if (jid<kid) then
@@ -937,7 +950,7 @@ do j=1,NATOMS
         rjk(1:3) = pos(j,1:3) - pos(k,1:3)
         rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
          
-        do i1=1, nbrlist(j,0)
+        do i1=1, mcx%nbrlist(j,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
            BOij = bos%BO(0,j,i1) - cutof2_esub
@@ -945,7 +958,7 @@ do j=1,NATOMS
 !--- NOTICE: cutoff condition to ignore bonding.
            if((bos%BO(0,j,i1)>cutof2_esub) .and. ((bos%BO(0,j,i1)*bos%BO(0,j,k1))>cutof2_esub)) then !poten.f from iv() calculataion
 
-           i=nbrlist(j,i1)
+           i=mcx%nbrlist(j,i1)
 
            if (i/=k) then
 
@@ -965,7 +978,7 @@ do j=1,NATOMS
 
               call cross_product(rij, rjk, crs_ijk)
 
-              do l1=1, nbrlist(k,0)
+              do l1=1, mcx%nbrlist(k,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
                  BOkl = bos%BO(0,k,l1) - cutof2_esub
@@ -973,7 +986,7 @@ do j=1,NATOMS
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
                  if((bos%BO(0,k,l1)>cutof2_esub).and.(bos%BO(0,j,k1)*bos%BO(0,k,l1)>cutof2_esub)) then !poten.f,line 1829,1830
 
-                 l=nbrlist(k,l1)
+                 l=mcx%nbrlist(k,l1)
                  lty = itype(l)
                  inxn = ffp%inxn4(ity,jty,kty,lty)
 
@@ -1080,11 +1093,11 @@ do j=1,NATOMS
                  C4body_b(1:3) = CEconj(1:3) + CEtors(4:6) !dBOij, dBOjk, dBOkl
                  C4body_a(1:3) = CEconj(4:6) + CEtors(7:9) !ijk, jkl, ijkl
 
-                 call ForceD(j, CEtors(3), bos, pos, f)
-                 call ForceD(k, CEtors(3), bos, pos, f)
+                 call ForceD(j, CEtors(3), mcx, bos, pos, f)
+                 call ForceD(k, CEtors(3), mcx, bos, pos, f)
 
-                 j1 = nbrindx(j, i1)
-                 call ForceB(i,j1, j,i1, C4body_b(1), bos, pos, f)
+                 j1 = mcx%nbrindx(j, i1)
+                 call ForceB(i,j1, j,i1, C4body_b(1), mcx, bos, pos, f)
 
 !--- To take care of the derivative of BOpi(j,k), add <Ctors(2)> to 
 !--- the full BOjk derivative coefficient <C4body_b(2)>, but only pi-bond 
@@ -1093,11 +1106,11 @@ do j=1,NATOMS
                  C4body_b_jk(2) = C4body_b(2) + CEtors(2)
                  C4body_b_jk(3) = C4body_b(2)
 
-                 j1 = nbrindx(j, k1)
-                 call ForceBbo(j,k1, k,j1, C4body_b_jk, bos, pos, f)
+                 j1 = mcx%nbrindx(j, k1)
+                 call ForceBbo(j,k1, k,j1, C4body_b_jk,  bos, pos, f)
 
-                 k2 = nbrindx(k, l1)
-                 call ForceB(k,l1, l,k2, C4body_b(3), bos, pos, f)
+                 k2 = mcx%nbrindx(k, l1)
+                 call ForceB(k,l1, l,k2, C4body_b(3), mcx, bos, pos, f)
 
                  call ForceA3(C4body_a(1), i,j,k, rij,rjk, pos, f)
                  call ForceA3(C4body_a(2), j,k,l, rjk,rkl, pos, f)
@@ -1124,30 +1137,31 @@ enddo
 
 !$omp master
 call system_clock(tj,tk)
-it_timer(12)=it_timer(12)+(tj-ti)
+mcx%it_timer(12)=mcx%it_timer(12)+(tj-ti)
 !$omp end master
 
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceD(i, coeff, bos, pos, f)
-use atoms; use bo
+subroutine ForceD(i, coeff, mcx, bos, pos, f)
+use md_context; use bo
 ! Calculate force from derivative of delta(i). 
 !-----------------------------------------------------------------------------------------
 implicit none
 
 integer,intent(IN) :: i
 real(8),intent(IN) :: coeff
+type(md_context_type),intent(in) :: mcx
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
 
 integer :: i1, j,j1
 real(8) :: Cbond(3), dr(3), ff(3)
 
-do j1=1, nbrlist(i,0)
-  j  = nbrlist(i,j1)
-  i1 = nbrindx(i,j1)
+do j1=1, mcx%nbrlist(i,0)
+  j  = mcx%nbrlist(i,j1)
+  i1 = mcx%nbrindx(i,j1)
 
   Cbond(1) = coeff*(bos%A0(i,j1) + bos%BO(0,i,j1)*bos%A1(i,j1) )! Coeff of BOp
   dr(1:3) = pos(i,1:3)-pos(j,1:3)
@@ -1186,8 +1200,8 @@ return
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceB(i,j1, j,i1, coeff, bos, pos, f)
-use atoms; use bo
+subroutine ForceB(i,j1, j,i1, coeff, mcx, bos, pos, f)
+use md_context; use bo
 ! Derivative of BOij using new bond order definition. Only difference is that sigma BO
 ! prime is replaced with full BOp. The derivative of BO becomes a bit simpler due to 
 ! the new definition.
@@ -1196,9 +1210,10 @@ implicit none
 
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff 
+type(md_context_type),intent(in) :: mcx
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
 
 real(8) :: Cbond(3),dr(3),ff(3)
 
@@ -1239,7 +1254,7 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 subroutine ForceBbo(i,j1, j,i1, coeff, bos, pos, f)
-use atoms; use bo
+use md_context; use bo
 ! Calculate force from derivative of BOij using different coefficient values 
 !-----------------------------------------------------------------------------------------
 implicit none
@@ -1247,8 +1262,8 @@ implicit none
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff(3)
 type(bo_var_type),intent(inout) :: bos
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
 
 real(8) :: Cbond(3),dr(3), ff(3),cBO(3),cf(3)
 
@@ -1303,7 +1318,7 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------
 subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2, pos, f)
-use atoms; use bo
+use md_context; use bo
 ! derivative of <cos_ijkl>
 !-----------------------------------------------------------------------------------------
 implicit none
@@ -1316,8 +1331,8 @@ implicit none
 
 integer,INTENT(IN) :: i,j,k,l
 real(8),INTENT(IN) :: coeff, da0(0:3), da1(0:3), da2(0:3)
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
 
 real(8) :: Daa(-1:0), Caa(-2:0,-2:0),Cwi(3), Cwj(3), Cwl(3)
 real(8) :: DDisqr, coDD, com
@@ -1410,7 +1425,7 @@ end subroutine
 
 !-----------------------------------------------------------------------
 subroutine ForceA3(coeff,i,j,k,da0, da1, pos, f)
-use atoms
+use md_context
 ! derivative of <cos_ijk>
 !-----------------------------------------------------------------------
 implicit none
@@ -1418,8 +1433,8 @@ implicit none
 
 real(8),INTENT(IN) :: coeff, da0(0:3), da1(0:3)
 integer,INTENT(IN) :: i,j,k
-real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(out) :: f(NBUFFER,3)
+real(8),intent(in),allocatable :: pos(:,:)
+real(8),intent(inout),allocatable :: f(:,:)
 
 real(8) :: Caa(-2:0,-2:0), Ci(3), Ck(3)
 real(8) :: fij(3), fjk(3), fijjk(3), rij(3), rjk(3)
@@ -1482,7 +1497,7 @@ end subroutine
 
 !-----------------------------------------------------------------------
 subroutine cross_product(dr1, dr2, crs)
-use atoms
+use md_context
 ! Calculate a cross product <dr1(1:3)> x <dr2(1:3)> = <crs(1:3)>
 ! <dr1> and <dr2> must have thier norm in 0th element.
 !-----------------------------------------------------------------------

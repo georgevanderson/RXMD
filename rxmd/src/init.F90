@@ -1,21 +1,22 @@
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(ffp, avs, bos, rxp, cla, mpt)
+SUBROUTINE INITSYSTEM(mcx, ffp, avs, bos, rxp, cla, mpt)
 use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use atoms; use bo; use energy_terms; use MemoryAllocator
+use ff_params; use md_context; use bo; use energy_terms; use MemoryAllocator
 use qeq_terms
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(mpi_var_type),intent(in) :: mpt
 type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
-type(atom_var_type),intent(out) :: avs
-type(bo_var_type),intent(out) :: bos
-type(rxmd_param_type),intent(out) :: rxp
+type(atom_var_type),intent(inout) :: avs
+type(bo_var_type),intent(inout) :: bos
+type(rxmd_param_type),intent(inout) :: rxp
 
-integer :: i,j,k, ity, l(3), ist=0
+integer :: i,j,k, ity, l(3), ist=0, ierr
 real(8) :: mm, gmm, dns, mat(3,3)
 integer(8) :: i8
 real(8) :: rcsize(3), maxrcell
@@ -40,22 +41,16 @@ if(rxp%mdmode==0) then
   rxp%isQEq=1
 endif
 
-!--- time unit conversion from [fs] -> time unit
-rxp%dt = rxp%dt/UTIME
-
 !--- square the spring const in the extended Lagrangian method 
 Lex_w2=2.d0*rxp%Lex_k/rxp%dt/rxp%dt
 
-!--- get reduced temperature from [K]
-rxp%treq=rxp%treq/UTEMP0
-
 !--- setup the vector ID and parity for processes, in x, y and z order.
-vID(1)=mod(mpt%myid,rxp%vprocs(1))
-vID(2)=mod(mpt%myid/rxp%vprocs(1),rxp%vprocs(2))
-vID(3)=mpt%myid/(rxp%vprocs(1)*rxp%vprocs(2))
-myparity(1)=mod(vID(1),2)
-myparity(2)=mod(vID(2),2)
-myparity(3)=mod(vID(3),2)
+mcx%vID(1)=mod(mpt%myid,rxp%vprocs(1))
+mcx%vID(2)=mod(mpt%myid/rxp%vprocs(1),rxp%vprocs(2))
+mcx%vID(3)=mpt%myid/(rxp%vprocs(1)*rxp%vprocs(2))
+mcx%myparity(1)=mod(mcx%vID(1),2)
+mcx%myparity(2)=mod(mcx%vID(2),2)
+mcx%myparity(3)=mod(mcx%vID(3),2)
 
 k=0
 do i=1,3
@@ -63,144 +58,143 @@ do i=1,3
    do j=1,-1,-2
 
 !--- save vector ID.
-      l(1:3) = vID(1:3)
+      l(1:3) = mcx%vID(1:3)
 
 !--- apply PBC.
-      l(i)=mod( (vID(i) + j + rxp%vprocs(i)), rxp%vprocs(i) )
+      l(i)=mod( (mcx%vID(i) + j + rxp%vprocs(i)), rxp%vprocs(i) )
      
 !--- get direction index.
       k=k+1 ![123456] 
 
 !--- convert vector ID to sequential ID.
-      target_node(k) = l(1)+l(2)*rxp%vprocs(1)+l(3)*rxp%vprocs(1)*rxp%vprocs(2) 
+      mcx%target_node(k) = l(1)+l(2)*rxp%vprocs(1)+l(3)*rxp%vprocs(1)*rxp%vprocs(2) 
    enddo         
                    
 enddo    
 
 !--- dt/2*mass, mass/2
-call allocatord1d(dthm, 1, ffp%nso)
-call allocatord1d(hmas, 1, ffp%nso)
+call allocatord1d(mcx%dthm, 1, ffp%nso)
+call allocatord1d(mcx%hmas, 1, ffp%nso)
 do ity=1,ffp%nso
-   dthm(ity) = rxp%dt*0.5d0/ffp%mass(ity)
-   hmas(ity) = 0.5d0*ffp%mass(ity)
+   mcx%dthm(ity) = rxp%dt*0.5d0/ffp%mass(ity)
+   mcx%hmas(ity) = 0.5d0*ffp%mass(ity)
 enddo
 
-call initialize_atom_vars(avs, NBUFFER)
-call ReadBIN(avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
+call initialize_atom_vars(avs, mcx%NBUFFER)
+call ReadBIN(mcx, avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
 
-call initialize_bo_vars(bos)
-call initialize_energy_terms(NBUFFER)
-call initialize_qeq_terms(NBUFFER, MAXNEIGHBS10)
-
-!--- Varaiable for extended Lagrangian method
-call allocatord1d(qtfp,1,NBUFFER)
-call allocatord1d(qtfv,1,NBUFFER)
-qtfp(:)=0.d0; qtfv(:)=0.d0
+call initialize_bo_vars(bos, mcx%NBUFFER)
+call initialize_energy_terms(mcx%NBUFFER)
+call initialize_qeq_terms(mcx%NBUFFER, MAXNEIGHBS10)
 
 !--- get total number of atoms per type. This will be used to determine
 !--- subroutine cutofflength() 
-allocate(natoms_per_type(ffp%nso),ibuf8(ffp%nso)) ! NOTE 8byte int is not supported in MemoryAllocator
-natoms_per_type(:)=0
-do i=1, NATOMS
+allocate(mcx%natoms_per_type(ffp%nso),mcx%ibuf8(ffp%nso)) ! NOTE 8byte int is not supported in MemoryAllocator
+mcx%natoms_per_type(:)=0
+do i=1, mcx%NATOMS
    ity=nint(avs%atype(i))
-   natoms_per_type(ity)=natoms_per_type(ity)+1
+   mcx%natoms_per_type(ity)=mcx%natoms_per_type(ity)+1
 enddo
 
-call MPI_ALLREDUCE(natoms_per_type, ibuf8, ffp%nso, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
-natoms_per_type(1:ffp%nso)=ibuf8(1:ffp%nso)
-deallocate(ibuf8)
+call MPI_ALLREDUCE(mcx%natoms_per_type, mcx%ibuf8, ffp%nso, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+mcx%natoms_per_type(1:ffp%nso)=mcx%ibuf8(1:ffp%nso)
+deallocate(mcx%ibuf8)
 
 !--- determine cutoff distances only for exsiting atom pairs
-call CUTOFFLENGTH(ffp)
+call CUTOFFLENGTH(mcx, ffp)
 
 !--- update box-related variables
-call UpdateBoxParams(rxp)
+call UpdateBoxParams(mcx, rxp)
 
 !--- get global number of atoms
-i8=NATOMS ! Convert 4 byte to 8 byte
-call MPI_ALLREDUCE(i8, GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+i8=mcx%NATOMS ! Convert 4 byte to 8 byte
+call MPI_ALLREDUCE(i8, mcx%GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
 #ifdef STRESS
 !--- stress variables
-call allocatord2d(astr(1,6,1,NBUFFER)
+call allocatord2d(astr(1,6,1,mcx%NBUFFER)
 astr(:,:)=0.d0; 
 #endif
 
 !--- Linked List & Near Neighb Parameters
-call allocatori2d(nbrlist,1,NBUFFER,0,MAXNEIGHBS)
-call allocatori2d(nbrindx,1,NBUFFER,1,MAXNEIGHBS)
-call allocatori2d(nbplist,1,NBUFFER,0,MAXNEIGHBS10)
-call allocatori1d(llist,1,NBUFFER)
-call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
-call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
+call allocatori2d(mcx%nbrlist,1,mcx%NBUFFER,0,MAXNEIGHBS)
+call allocatori2d(mcx%nbrindx,1,mcx%NBUFFER,1,MAXNEIGHBS)
+call allocatori2d(mcx%nbplist,1,mcx%NBUFFER,0,MAXNEIGHBS10)
+call allocatori1d(mcx%llist,1,mcx%NBUFFER)
+call allocatori3d(mcx%header,-MAXLAYERS,mcx%cc(1)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(2)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(3)-1+MAXLAYERS)
+call allocatori3d(mcx%nacell,-MAXLAYERS,mcx%cc(1)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(2)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(3)-1+MAXLAYERS)
 
 
 !--- returning force index array 
-call allocatori1d(frcindx,1,NBUFFER)
+call allocatori1d(mcx%frcindx,1,mcx%NBUFFER)
 
 !--- setup potential table
-call POTENTIALTABLE(ffp)
+call POTENTIALTABLE(mcx, ffp)
 
 !--- get real size of linked list cell
-rcsize(1) = lata/rxp%vprocs(1)/cc(1)
-rcsize(2) = latb/rxp%vprocs(2)/cc(2)
-rcsize(3) = latc/rxp%vprocs(3)/cc(3)
+rcsize(1) = mcx%lata/rxp%vprocs(1)/mcx%cc(1)
+rcsize(2) = mcx%latb/rxp%vprocs(2)/mcx%cc(2)
+rcsize(3) = mcx%latc/rxp%vprocs(3)/mcx%cc(3)
 maxrcell = maxval(rcsize(1:3))
 
 
 !--- setup 10[A] radius mesh to avoid visiting unecessary cells 
-call GetNonbondingMesh(ffp, rxp)
+call GetNonbondingMesh(mcx, ffp, rxp)
 
 !--- get density 
 mm = 0.d0
-do i=1, NATOMS
+do i=1, mcx%NATOMS
    ity = nint(avs%atype(i))
    mm = mm + ffp%mass(ity)
 enddo
 call MPI_ALLREDUCE (mm, gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-dns=gmm/MDBOX*UDENS
+dns=gmm/mcx%MDBOX*UDENS
 
 !--- allocate & initialize Array size Stat variables
 i=rxp%ntime_step/rxp%pstep+1
-allocate(maxas(i,nmaxas))
-maxas(:,:)=0
+allocate(mcx%maxas(i,nmaxas))
+mcx%maxas(:,:)=0
 
 !--- print out parameters and open data file
 if(mpt%myid==0) then
    write(6,'(a)') "----------------------------------------------------------------"
    write(6,'(a30,i9,a3,i9)') "req/alloc # of procs:", rxp%vprocs(1)*rxp%vprocs(2)*rxp%vprocs(3), "  /",mpt%nprocs
    write(6,'(a30,3i9)')      "req proc arrengement:", rxp%vprocs(1),rxp%vprocs(2),rxp%vprocs(3)
-   write(6,'(a30,a70)')      "parameter set:", FFDescript
+   write(6,'(a30,a70)')      "parameter set:", mcx%FFDescript
    write(6,'(a30,es12.2)')   "time step[fs]:",rxp%dt*UTIME
    write(6,'(a30,i3, i10, i10)') "MDMODE CURRENTSTEP NTIMESTPE:", &
-                                  rxp%mdmode, current_step, rxp%ntime_step
+                                  rxp%mdmode, mcx%current_step, rxp%ntime_step
    write(6,'(a30,i6,es10.1,i6,i6)') "isQEq,QEq_tol,NMAXQEq,qstep:", &
                                      rxp%isQEq,rxp%QEq_tol,rxp%NMAXQEq,rxp%qstep
    write(6,'(a30,f8.3,f8.3)') 'Lex_fqs,Lex_k:',rxp%Lex_fqs,rxp%Lex_k
    write(6,'(a30,f12.3,f8.3,i9)') 'treq,vsfact,sstep:',rxp%treq*UTEMP0, rxp%vsfact, rxp%sstep
    write(6,'(a30,2i6)') 'fstep,pstep:', rxp%fstep,rxp%pstep
-   write(6,'(a30,i24,i24)') "NATOMS GNATOMS:", NATOMS, GNATOMS
-   write(6,'(a30,3f12.3)') "LBOX:",LBOX(1:3)
-   write(6,'(a30,3f15.3)') "Hmatrix [A]:",HH(1:3,1,0)
-   write(6,'(a30,3f15.3)') "Hmatrix [A]:",HH(1:3,2,0)
-   write(6,'(a30,3f15.3)') "Hmatrix [A]:",HH(1:3,3,0)
-   print'(a30,3f12.3)', 'lata,latb,latc:', lata,latb,latc
-   print'(a30,3f12.3)', 'lalpha,lbeta,lgamma:', lalpha,lbeta,lgamma
+   write(6,'(a30,i24,i24)') "NATOMS GNATOMS:", mcx%NATOMS, mcx%GNATOMS
+   write(6,'(a30,3f12.3)') "LBOX:",mcx%LBOX(1:3)
+   write(6,'(a30,3f15.3)') "Hmatrix [A]:",mcx%HH(1:3,1,0)
+   write(6,'(a30,3f15.3)') "Hmatrix [A]:",mcx%HH(1:3,2,0)
+   write(6,'(a30,3f15.3)') "Hmatrix [A]:",mcx%HH(1:3,3,0)
+   print'(a30,3f12.3)', 'lata,latb,latc:', mcx%lata,mcx%latb,mcx%latc
+   print'(a30,3f12.3)', 'lalpha,lbeta,lgamma:', mcx%lalpha,mcx%lbeta,mcx%lgamma
    write(6,'(a30,3f10.4)') "density [g/cc]:",dns
-   write(6,'(a30,3i6)')  '# of linkedlist cell:', cc(1:3)
-   write(6,'(a30,f10.3,2x,3f10.2)') "maxrc, lcsize [A]:", &
-   maxrc,lata/cc(1)/rxp%vprocs(1),latb/cc(2)/rxp%vprocs(2),latc/cc(3)/rxp%vprocs(3)
-   write(6,'(a30,3i6)')  '# of linkedlist cell (NB):', nbcc(1:3)
+   write(6,'(a30,3i6)')  '# of linkedlist cell:', mcx%cc(1:3)
+   write(6,'(a30,f10.3,2x,3f10.2)') "maxrc, lcsize [A]:", mcx%maxrc, &
+         mcx%lata/mcx%cc(1)/rxp%vprocs(1), &
+         mcx%latb/mcx%cc(2)/rxp%vprocs(2), &
+         mcx%latc/mcx%cc(3)/rxp%vprocs(3)
+   write(6,'(a30,3i6)')  '# of linkedlist cell (NB):', mcx%nbcc(1:3)
    write(6,'(a30,3f10.2)') "lcsize [A] (NB):", &
-   lata/nbcc(1)/rxp%vprocs(1),latb/nbcc(2)/rxp%vprocs(2),latc/nbcc(3)/rxp%vprocs(3)
+         mcx%lata/mcx%nbcc(1)/rxp%vprocs(1), &
+         mcx%latb/mcx%nbcc(2)/rxp%vprocs(2), &
+         mcx%latc/mcx%nbcc(3)/rxp%vprocs(3)
    write(6,'(a30,2i6)') "MAXNEIGHBS, MAXNEIGHBS10:", MAXNEIGHBS,MAXNEIGHBS10
-   write(6,'(a30,i6,i9)') "NMINCELL, NBUFFER:", NMINCELL, NBUFFER
+   write(6,'(a30,i6,i9)') "NMINCELL, NBUFFER:", NMINCELL, mcx%NBUFFER
    write(6,'(a30,3(a12,1x))') "FFPath, DataDir, ParmPath:", &
                           trim(cla%FFPath), trim(cla%dataDir), trim(cla%ParmPath)
 
    print'(a30 $)','# of atoms per type:'
    do ity=1,ffp%nso
-      if(natoms_per_type(ity)>0) print'(i12,a2,i2 $)',natoms_per_type(ity),' -',ity
+      if(mcx%natoms_per_type(ity)>0) print'(i12,a2,i2 $)',mcx%natoms_per_type(ity),' -',ity
    enddo
    print*
 
@@ -213,18 +207,19 @@ endif
 END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITVELOCITY(ffp, atype, v, treq)
-use ff_params; use atoms; use mpi_vars
+SUBROUTINE INITVELOCITY(mcx, ffp, atype, v, treq)
+use ff_params; use md_context; use mpi_vars
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
 implicit none
 
 real(8),intent(in) :: treq
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
-real(8) :: atype(NBUFFER)
-real(8) :: v(3,NBUFFER)
+real(8) :: atype(mcx%NBUFFER)
+real(8) :: v(3,mcx%NBUFFER)
 
-integer :: i, k, ity
+integer :: i, k, ity, ierr
 real(8) :: vv(2), vsqr, vsl, rndm(2)
 real(8) :: vCM(3), GvCM(3), mm, Gmm
 real(8) :: vfactor
@@ -232,7 +227,7 @@ real(8) :: vfactor
 !--- assign velocity to two atoms together with BM algoritm. 
 !--- If <NATOMS> is odd, the <NATOMS> + 1 element will be the ignored in later calculations.
 
-do i=1, NATOMS, 2
+do i=1, mcx%NATOMS, 2
 
   do k=1,3 ! three directions
      !--- generate gaussian distributed velocity
@@ -253,7 +248,7 @@ enddo
 
 !--- get the local momentum and mass.
 vCM(:)=0.d0;  mm = 0.d0
-do i=1, NATOMS
+do i=1, mcx%NATOMS
    ity = nint(atype(i))
    vCM(1:3)=vCM(1:3) + ffp%mass(ity)*v(i,1:3)
    mm = mm + ffp%mass(ity)
@@ -266,28 +261,30 @@ call MPI_ALLREDUCE (mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, 
 GvCM(:)=GvCM(:)/Gmm
 
 !--- set the total momentum to be zero and get the current kinetic energy. 
-KE = 0.d0
-do i=1, NATOMS
+mcx%KE = 0.d0
+do i=1, mcx%NATOMS
    v(i,1:3) = v(i,1:3) - GvCM(1:3)
 
    ity = nint(atype(i))
-   KE = KE + hmas(ity)*sum( v(i,1:3)*v(i,1:3) )
+   mcx%KE = mcx%KE + mcx%hmas(ity)*sum( v(i,1:3)*v(i,1:3) )
 enddo
 
-call MPI_ALLREDUCE (KE, GKE, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-GKE = GKE/GNATOMS
+call MPI_ALLREDUCE (mcx%KE, mcx%GKE, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+mcx%GKE = mcx%GKE/mcx%GNATOMS
 
 !--- scale the obtained velocity to get the initial temperature.
-vfactor = sqrt(1.5d0*treq/GKE)
+vfactor = sqrt(1.5d0*treq/mcx%GKE)
 v(:,:) = vfactor * v(:,:)
 
 end subroutine
 
 !------------------------------------------------------------------------------------------
-subroutine CUTOFFLENGTH(ffp)
-use atoms; use ff_params 
+subroutine CUTOFFLENGTH(mcx, ffp)
+use md_context; use ff_params 
 !------------------------------------------------------------------------------------------
 implicit none
+
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
 
 integer :: ity,jty,inxn
@@ -298,9 +295,9 @@ real(8) :: dr,BOsig
 ! --- Remark --- 
 ! sigma bond before correction is the longest, namely longer than than pi and double-pi bonds
 ! thus check only sigma bond convergence.
-allocate(rc(ffp%nboty), rc2(ffp%nboty))
+allocate(mcx%rc(ffp%nboty), mcx%rc2(ffp%nboty))
 
-rc(:)=0.d0; rc2(:)=0.d0
+mcx%rc(:)=0.d0; mcx%rc2(:)=0.d0
 do ity=1,ffp%nso
 do jty=ity,ffp%nso
 
@@ -314,8 +311,8 @@ do jty=ity,ffp%nso
       BOsig = exp( ffp%pbo1(inxn)*(dr/ffp%r0s(ity,jty))**ffp%pbo2(inxn) ) !<- sigma bond prime
    enddo
 
-   rc(inxn)  = dr
-   rc2(inxn) = dr*dr
+   mcx%rc(inxn)  = dr
+   mcx%rc2(inxn) = dr*dr
 enddo
 enddo
 
@@ -325,26 +322,28 @@ enddo
 ! such atoms to keep the linkedlist cell dimensions as small as possible.
 !----------------------------------------------------------------------------
 do ity=1,ffp%nso
-   if(natoms_per_type(ity)==0) then
+   if(mcx%natoms_per_type(ity)==0) then
       do jty=1,ffp%nso
          inxn=ffp%inxn2(ity,jty)
-         if(inxn/=0) rc(inxn)=0.d0
+         if(inxn/=0) mcx%rc(inxn)=0.d0
          inxn=ffp%inxn2(jty,ity)
-         if(inxn/=0) rc(inxn)=0.d0
+         if(inxn/=0) mcx%rc(inxn)=0.d0
       enddo
    endif
 enddo
 
 !--- get the max cutoff length 
-maxrc=maxval(rc(:))
+mcx%maxrc=maxval(mcx%rc(:))
 
 end subroutine
 
 !------------------------------------------------------------------------------------------
-subroutine POTENTIALTABLE(ffp)
-use atoms; use ff_params; use MemoryAllocator
+subroutine POTENTIALTABLE(mcx, ffp)
+use md_context; use ff_params; use MemoryAllocator
 !------------------------------------------------------------------------------------------
 implicit none
+
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
 
 integer :: i, ity,jty,inxn
@@ -356,13 +355,13 @@ real(8) :: Tap, dTap, fn13, dfn13, dr3gamij, rij_vd1
 
 !--- first element in table 0: potential
 !---                        1: derivative of potential
-call allocatord3d(TBL_EClmb,0,1,1,NTABLE,1,ffp%nboty)
-call allocatord3d(TBL_Evdw,0,1,1,NTABLE,1,ffp%nboty)
-call allocatord2d(TBL_EClmb_QEq,1,NTABLE,1,ffp%nboty)
+call allocatord3d(mcx%TBL_EClmb,0,1,1,NTABLE,1,ffp%nboty)
+call allocatord3d(mcx%TBL_Evdw,0,1,1,NTABLE,1,ffp%nboty)
+call allocatord2d(mcx%TBL_EClmb_QEq,1,NTABLE,1,ffp%nboty)
 
 !--- unit distance in r^2 scale
-UDR = ffp%rctap2/NTABLE
-UDRi = 1.d0/UDR
+mcx%UDR = ffp%rctap2/NTABLE
+mcx%UDRi = 1.d0/mcx%UDR
 
 do ity=1, ffp%nso
 do jty=ity, ffp%nso
@@ -371,7 +370,7 @@ do jty=ity, ffp%nso
    if(inxn/=0) then
       do i=1, NTABLE
 
-         dr2 = UDR*i
+         dr2 = mcx%UDR*i
          dr1 = sqrt(dr2)
 
 !--- Interaction Parameters:
@@ -401,9 +400,9 @@ do jty=ity, ffp%nso
 !      PEclmb = Tap*Cclmb*q(i)*q(j)*dr3gamij
 !if(myid==0) print*,i, Tap*Dij0*(exp1 - 2d0*exp2), Tap*Cclmb*dr3gamij
 
-          TBL_Evdw(0,i,inxn) = Tap*Dij0*(exp1 - 2d0*exp2)      
-          TBL_Eclmb(0,i,inxn) = Tap*Cclmb*dr3gamij
-          TBL_Eclmb_QEq(i,inxn) = Tap*Cclmb0_qeq*dr3gamij
+          mcx%TBL_Evdw(0,i,inxn) = Tap*Dij0*(exp1 - 2d0*exp2)      
+          mcx%TBL_Eclmb(0,i,inxn) = Tap*Cclmb*dr3gamij
+          mcx%TBL_Eclmb_QEq(i,inxn) = Tap*Cclmb0_qeq*dr3gamij
 
 !if(inxn==1.and.myid==0) print*,i,TBL_Evdw(i,inxn,0), TBL_Eclmb(i,inxn,0)
 
@@ -417,9 +416,9 @@ do jty=ity, ffp%nso
 !           - Tap*(alphaij/rvdW0)*(exp1 - exp2)*dfn13 )
 !      CEclmb = Cclmb*q(i)*q(j)*dr3gamij*( dTap - (dr3gamij**3)*Tap*dr(0) ) 
 
-         TBL_Evdw(1,i,inxn) = Dij0*( dTap*(exp1 - 2.d0*exp2)  &
+         mcx%TBL_Evdw(1,i,inxn) = Dij0*( dTap*(exp1 - 2.d0*exp2)  &
                             - Tap*(alphaij/rvdW0)*(exp1 - exp2)*dfn13 )
-         TBL_Eclmb(1,i,inxn) = Cclmb*dr3gamij*( dTap - (dr3gamij**3)*Tap*dr1 ) 
+         mcx%TBL_Eclmb(1,i,inxn) = Cclmb*dr3gamij*( dTap - (dr3gamij**3)*Tap*dr1 ) 
 
       enddo
    endif
@@ -430,12 +429,13 @@ enddo
 end subroutine
 
 !----------------------------------------------------------------
-subroutine GetNonbondingMesh(ffp, rxp)
-use atoms; use rxmd_params; use ff_params; use MemoryAllocator
+subroutine GetNonbondingMesh(mcx, ffp, rxp)
+use md_context; use rxmd_params; use ff_params; use MemoryAllocator
 ! setup 10[A] radius mesh to avoid visiting unecessary cells 
 !----------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
 type(rxmd_param_type),intent(in) :: rxp
 
@@ -446,23 +446,23 @@ real(8) :: maxrcell
 integer :: imesh(3), maximesh, ii(3), i1
 
 !--- initial estimate of LL cell dims
-nblcsize(1:3)=3d0
+mcx%nblcsize(1:3)=3d0
 
 !--- get mesh resolution which is close to the initial value of rlc.
-latticePerNode(1)=lata/rxp%vprocs(1)
-latticePerNode(2)=latb/rxp%vprocs(2)
-latticePerNode(3)=latc/rxp%vprocs(3)
-nbcc(1:3)=int(latticePerNode(1:3)/nblcsize(1:3))
-nblcsize(1:3)=latticePerNode(1:3)/nbcc(1:3)
-maxrcell = maxval(nblcsize(1:3))
+latticePerNode(1)=mcx%lata/rxp%vprocs(1)
+latticePerNode(2)=mcx%latb/rxp%vprocs(2)
+latticePerNode(3)=mcx%latc/rxp%vprocs(3)
+mcx%nbcc(1:3)=int(latticePerNode(1:3)/mcx%nblcsize(1:3))
+mcx%nblcsize(1:3)=latticePerNode(1:3)/mcx%nbcc(1:3)
+maxrcell = maxval(mcx%nblcsize(1:3))
 
 !--- get # of linked list cell to cover up the non-bonding (10[A]) cutoff length
-imesh(1:3)  = int(ffp%rctap/nblcsize(1:3)) + 1
+imesh(1:3)  = int(ffp%rctap/mcx%nblcsize(1:3)) + 1
 maximesh = maxval(imesh(1:3))
 
 !--- List up only cell indices within the cutoff range.
 !--- pre-compute nmesh to get exact array size.
-nbnmesh=0
+mcx%nbnmesh=0
 do i=-imesh(1), imesh(1)
 do j=-imesh(2), imesh(2)
 do k=-imesh(3), imesh(3)
@@ -474,15 +474,15 @@ do k=-imesh(3), imesh(3)
          ii(i1)=ii(i1)+1
       endif
    enddo
-   rr(1:3) = ii(1:3)*nblcsize(1:3)
+   rr(1:3) = ii(1:3)*mcx%nblcsize(1:3)
    dr2 = sum(rr(1:3)*rr(1:3))
-   if(dr2 <= ffp%rctap**2) nbnmesh = nbnmesh + 1
+   if(dr2 <= ffp%rctap**2) mcx%nbnmesh = mcx%nbnmesh + 1
 enddo; enddo; enddo
 
-call allocatori2d(nbmesh,1,3,1,nbnmesh)
+call allocatori2d(mcx%nbmesh,1,3,1,mcx%nbnmesh)
 
-nbmesh(:,:)=0
-nbnmesh=0
+mcx%nbmesh(:,:)=0
+mcx%nbnmesh=0
 do i=-imesh(1), imesh(1)
 do j=-imesh(2), imesh(2)
 do k=-imesh(3), imesh(3)
@@ -494,26 +494,26 @@ do k=-imesh(3), imesh(3)
          ii(i1)=ii(i1)+1
       endif
    enddo
-   rr(1:3) = ii(1:3)*nblcsize(1:3)
+   rr(1:3) = ii(1:3)*mcx%nblcsize(1:3)
    dr2 = sum(rr(1:3)*rr(1:3))
    if(dr2 <= ffp%rctap**2) then
-      nbnmesh = nbnmesh + 1
-      nbmesh(1:3,nbnmesh) = (/i, j, k/)
+      mcx%nbnmesh = mcx%nbnmesh + 1
+      mcx%nbmesh(1:3,mcx%nbnmesh) = (/i, j, k/)
    endif
 enddo; enddo; enddo
 
-call allocatori1d(nbllist,1,NBUFFER)
-call allocatori3d(nbheader, &
-                -MAXLAYERS_NB,nbcc(1)-1+MAXLAYERS_NB, &
-                -MAXLAYERS_NB,nbcc(2)-1+MAXLAYERS_NB, &
-                -MAXLAYERS_NB,nbcc(3)-1+MAXLAYERS_NB)
-call allocatori3d(nbnacell, &
-                -MAXLAYERS_NB,nbcc(1)-1+MAXLAYERS_NB, &
-                -MAXLAYERS_NB,nbcc(2)-1+MAXLAYERS_NB, &
-                -MAXLAYERS_NB,nbcc(3)-1+MAXLAYERS_NB)
+call allocatori1d(mcx%nbllist,1,mcx%NBUFFER)
+call allocatori3d(mcx%nbheader, &
+                -MAXLAYERS_NB,mcx%nbcc(1)-1+MAXLAYERS_NB, &
+                -MAXLAYERS_NB,mcx%nbcc(2)-1+MAXLAYERS_NB, &
+                -MAXLAYERS_NB,mcx%nbcc(3)-1+MAXLAYERS_NB)
+call allocatori3d(mcx%nbnacell, &
+                -MAXLAYERS_NB,mcx%nbcc(1)-1+MAXLAYERS_NB, &
+                -MAXLAYERS_NB,mcx%nbcc(2)-1+MAXLAYERS_NB, &
+                -MAXLAYERS_NB,mcx%nbcc(3)-1+MAXLAYERS_NB)
 
 !--- normalize nblcsize, like lcsize.
-nblcsize(1:3)=nblcsize(1:3)/(/lata,latb,latc/)
+mcx%nblcsize(1:3)=mcx%nblcsize(1:3)/(/mcx%lata,mcx%latb,mcx%latc/)
 
 end subroutine
 
@@ -521,7 +521,7 @@ end subroutine
 subroutine GetBoxParams(H,la,lb,lc,angle1,angle2,angle3)
 !----------------------------------------------------------------
 implicit none
-real(8),intent(out) :: H(3,3)
+real(8),intent(inout) :: H(3,3)
 real(8),intent(in) :: la,lb,lc, angle1,angle2,angle3
 real(8) :: hh1, hh2 , lal, lbe, lga
 real(8) :: pi=atan(1.d0)*4.d0
@@ -544,38 +544,39 @@ return
 end subroutine
 
 !----------------------------------------------------------------
-subroutine UpdateBoxParams(rxp)
-use atoms; use rxmd_params; use ff_params 
+subroutine UpdateBoxParams(mcx, rxp)
+use md_context; use rxmd_params; use ff_params; use support_funcs
 !----------------------------------------------------------------
 implicit none
 
+type(md_context_type),intent(inout) :: mcx
 type(rxmd_param_type),intent(in) :: rxp
 
 !--- get volume 
-MDBOX = &
-HH(1,1,0)*(HH(2,2,0)*HH(3,3,0) - HH(3,2,0)*HH(2,3,0)) + &
-HH(2,1,0)*(HH(3,2,0)*HH(1,3,0) - HH(1,2,0)*HH(3,3,0)) + &
-HH(3,1,0)*(HH(1,2,0)*HH(2,3,0) - HH(2,2,0)*HH(1,3,0))
+mcx%MDBOX = &
+mcx%HH(1,1,0)*(mcx%HH(2,2,0)*mcx%HH(3,3,0) - mcx%HH(3,2,0)*mcx%HH(2,3,0)) + &
+mcx%HH(2,1,0)*(mcx%HH(3,2,0)*mcx%HH(1,3,0) - mcx%HH(1,2,0)*mcx%HH(3,3,0)) + &
+mcx%HH(3,1,0)*(mcx%HH(1,2,0)*mcx%HH(2,3,0) - mcx%HH(2,2,0)*mcx%HH(1,3,0))
 
 !--- get inverse of H-matrix
-call matinv(HH,HHi)
+call matinv(mcx%HH,mcx%HHi)
 
 !--- local box dimensions (a temporary use of lbox)
-LBOX(1)=lata/rxp%vprocs(1)
-LBOX(2)=latb/rxp%vprocs(2)
-LBOX(3)=latc/rxp%vprocs(3)
+mcx%LBOX(1)=mcx%lata/rxp%vprocs(1)
+mcx%LBOX(2)=mcx%latb/rxp%vprocs(2)
+mcx%LBOX(3)=mcx%latc/rxp%vprocs(3)
 
 !--- get the number of linkedlist cell per domain
-cc(1:3)=int(LBOX(1:3)/maxrc)
+mcx%cc(1:3)=int(mcx%LBOX(1:3)/mcx%maxrc)
 
 !--- local system size in the unscaled coordinate.
-LBOX(1:3) = 1.d0/rxp%vprocs(1:3)
+mcx%LBOX(1:3) = 1.d0/rxp%vprocs(1:3)
 
 !--- get the linkedlist cell dimensions (normalized)
-lcsize(1:3) = LBOX(1:3)/cc(1:3)
+mcx%lcsize(1:3) = mcx%LBOX(1:3)/mcx%cc(1:3)
 
 !--- get origin of local MD box in the scaled coordiate.
-OBOX(1:3) = LBOX(1:3)*vID(1:3)
+mcx%OBOX(1:3) = mcx%LBOX(1:3)*mcx%vID(1:3)
 
 return
 end
