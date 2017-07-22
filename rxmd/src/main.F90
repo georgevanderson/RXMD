@@ -1,7 +1,8 @@
 !------------------------------------------------------------------------------
 program rxmd
 use atom_vars; use bo; use md_context; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use energy_terms; use qeq_terms; use support_funcs
+use ff_params; use energy_terms; use support_funcs; use comms; use fileio_funcs
+use init_funcs; use qeq_vars; use qeq_funcs
 !use CG !!FIXME!!
 !------------------------------------------------------------------------------
 implicit none
@@ -11,6 +12,7 @@ real(8) :: ctmp, dr(3)
 type(md_context_type) :: mcx
 type(forcefield_params) :: ffp
 type(atom_var_type) :: avs
+type(qeq_var_type) :: qvt
 type(rxmd_param_type) :: rxp
 type(cmdline_arg_type) :: cla
 type(mpi_var_type) :: mpt
@@ -28,13 +30,13 @@ if(mpt%myid==0)  print'(a30)', 'rxmd has started'
 CALL GETPARAMS(ffp, cla%FFPath, mcx%FFDescript)
 
 !--- initialize the MD system
-CALL INITSYSTEM(mcx, ffp, avs, bos, rxp, cla, mpt)
+CALL INITSYSTEM(mcx, ffp, avs, qvt, bos, rxp, cla, mpt)
 
 !!FIXME!!
 !if(rxp%mdmode==10) call ConjugateGradient(ffp, mpt, bos, avs, avs%atype, avs%pos, rxp%ftol)
 
-call QEq(ffp, avs, mpt, rxp, mcx)
-call FORCE(ffp, mpt, bos, avs, mcx)
+call QEq(ffp, avs, qvt, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos, avs, qvt, mcx)
 
 !--- Enter Main MD loop 
 call system_clock(it1,irt)
@@ -49,7 +51,7 @@ do nstep=0, rxp%ntime_step-1
    endif
 
    if(mod(nstep, rxp%fstep)==0) &
-        call OUTPUT(mcx, ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+nstep))
+        call OUTPUT(mcx, ffp, avs, qvt, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+nstep))
 
    if(mod(nstep, rxp%sstep)==0 .and. rxp%mdmode==4) &
       avs%v(1:mcx%NATOMS,1:3)=rxp%vsfact*avs%v(1:mcx%NATOMS,1:3)
@@ -60,7 +62,7 @@ do nstep=0, rxp%ntime_step-1
    endif
 
    if(mod(nstep,rxp%sstep)==0.and.(rxp%mdmode==0.or.rxp%mdmode==6)) &
-      call INITVELOCITY(avs%atype, avs%v)
+      call INITVELOCITY(mcx, ffp, avs%atype, avs%v, rxp%treq)
 
    if(mod(nstep,rxp%sstep)==0.and.rxp%mdmode==7) &
       call ScaleTemperature(mcx, ffp, mpt, rxp%treq, avs%atype, avs%v)
@@ -69,24 +71,24 @@ do nstep=0, rxp%ntime_step-1
    call vkick(mcx, 1.d0, avs%atype, avs%v, avs%f) 
 
 !--- update coordinates
-   qsfv(1:mcx%NATOMS) = qsfv(1:mcx%NATOMS) + &
-      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:mcx%NATOMS)-qsfp(1:mcx%NATOMS))
+   qvt%qsfv(1:mcx%NATOMS) = qvt%qsfv(1:mcx%NATOMS) + &
+      0.5d0 * rxp%dt * qvt%Lex_w2 * (avs%q(1:mcx%NATOMS)-qvt%qsfp(1:mcx%NATOMS))
 
-   qsfp(1:mcx%NATOMS) = qsfp(1:mcx%NATOMS) + rxp%dt*qsfv(1:mcx%NATOMS)
+   qvt%qsfp(1:mcx%NATOMS) = qvt%qsfp(1:mcx%NATOMS) + rxp%dt * qvt%qsfv(1:mcx%NATOMS)
 
    avs%pos(1:mcx%NATOMS,1:3) = avs%pos(1:mcx%NATOMS,1:3) + rxp%dt * avs%v(1:mcx%NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
-   call COPYATOMS(mcx, avs, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+   call COPYATOMS(mcx, avs, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
    
-   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, mpt, rxp, mcx)
-   call FORCE(ffp, mpt, bos, avs, mcx)
+   if(mod(nstep,rxp%qstep)==0) call QEq(ffp, avs, qvt, mpt, rxp, mcx)
+   call FORCE(ffp, mpt, bos, avs, qvt, mcx)
 
 !--- update velocity
    call vkick(mcx, 1.d0, avs%atype, avs%v, avs%f) 
 
-   qsfv(1:mcx%NATOMS) = qsfv(1:mcx%NATOMS) +  &
-      0.5d0 * rxp%dt * Lex_w2 * (avs%q(1:mcx%NATOMS)-qsfp(1:mcx%NATOMS))
+   qvt%qsfv(1:mcx%NATOMS) = qvt%qsfv(1:mcx%NATOMS) +  &
+      0.5d0 * rxp%dt * qvt%Lex_w2 * (avs%q(1:mcx%NATOMS)-qvt%qsfp(1:mcx%NATOMS))
 
 enddo
 
@@ -94,10 +96,10 @@ enddo
 mcx%nstep=nstep
 
 !--- save the final configurations
-call OUTPUT(mcx, ffp, avs, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+mcx%nstep))
+call OUTPUT(mcx, ffp, avs, qvt, bos, rxp, mpt, GetFileNameBase(cla%dataDir, mcx%current_step+mcx%nstep))
 
 !--- update rxff.bin in working directory for continuation run
-if(rxp%isBinary) call WriteBIN(mcx, avs, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
+if(rxp%isBinary) call WriteBIN(mcx, avs, qvt, rxp, mpt, GetFileNameBase(cla%dataDir, -1))
 
 call system_clock(it2,irt)
 mcx%it_timer(Ntimer)=(it2-it1)

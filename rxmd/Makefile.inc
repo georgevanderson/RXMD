@@ -7,7 +7,7 @@
 
 ##FIXME##
 #SRCS := cg.F90 pot.F90 fileio.F90 comm.F90 init.F90 bo.F90 qeq.F90 param.F90 stress.F90 list.F90 support.F90 main.F90
-SRCS := memory.F90 pot.F90 fileio.F90 comm.F90 init.F90 bo.F90 qeq.F90 param.F90 stress.F90 list.F90 support.F90 main.F90
+SRCS := memory.F90 pot.F90 fileio.F90 comm.F90 init.F90 bo.F90 qeq_vars.F90 qeq.F90 param.F90 stress.F90 list.F90 support.F90 main.F90
 OBJS := $(SRCS:.F90=.o)
 
 EXE := rxmd

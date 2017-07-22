@@ -1,12 +1,17 @@
+module fileio_funcs
+
+contains
+
 !----------------------------------------------------------------------------------------
-subroutine OUTPUT(mcx, ffp, avs, bos, rxp, mpt, fileNameBase)
+subroutine OUTPUT(mcx, ffp, avs, qvt, bos, rxp, mpt, fileNameBase)
 use atom_vars; use md_context; use ff_params; use mpi_vars; use rxmd_params; use bo
-use qeq_terms
+use qeq_vars
 !----------------------------------------------------------------------------------------
 implicit none
 
 type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
+type(qeq_var_type),intent(in) :: qvt
 type(bo_var_type),intent(in) :: bos
 type(forcefield_params),intent(in) :: ffp
 type(rxmd_param_type),intent(in) :: rxp
@@ -14,7 +19,7 @@ type(mpi_var_type),intent(in) :: mpt
 
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
-if(rxp%isBinary) call WriteBIN(mcx, avs, rxp, mpt, fileNameBase)
+if(rxp%isBinary) call WriteBIN(mcx, avs, qvt, rxp, mpt, fileNameBase)
 
 if(rxp%isBondFile) call WriteBND(mcx, avs, bos, mpt, fileNameBase)
 if(rxp%isPDB) call WritePDB(mcx, ffp, avs, mpt, fileNameBase)
@@ -251,16 +256,17 @@ end subroutine
 end subroutine OUTPUT
 
 !--------------------------------------------------------------------------
-subroutine ReadBIN(mcx, avs, rxp, mpt, fileName)
+subroutine ReadBIN(mcx, avs, qvt, rxp, mpt, fileName)
 use atom_vars; use rxmd_params; use md_context; use mpi_vars; use MemoryAllocator
-use qeq_terms; use support_funcs
+use qeq_vars; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
 type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(inout) :: avs 
+type(qeq_var_type),intent(inout) :: qvt
 type(rxmd_param_type),intent(in) :: rxp
-type(mpi_var_type),intent(inout) :: mpt
+type(mpi_var_type),intent(in) :: mpt
 
 character(*),intent(in) :: fileName
 
@@ -337,8 +343,8 @@ if(.not.allocated(avs%q)) call allocatord1d(avs%q,1,mcx%NBUFFER)
 if(.not.allocated(avs%pos)) call allocatord2d(avs%pos,1,mcx%NBUFFER,1,3)
 if(.not.allocated(avs%v)) call allocatord2d(avs%v,1,mcx%NBUFFER,1,3)
 if(.not.allocated(avs%f)) call allocatord2d(avs%f,1,mcx%NBUFFER,1,3)
-if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,mcx%NBUFFER)
-if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,mcx%NBUFFER)
+if(.not.allocated(qvt%qsfp)) call allocatord1d(qvt%qsfp,1,mcx%NBUFFER)
+if(.not.allocated(qvt%qsfv)) call allocatord1d(qvt%qsfv,1,mcx%NBUFFER)
 avs%f(:,:)=0.0
 
 do i=1, mcx%NATOMS
@@ -347,8 +353,8 @@ do i=1, mcx%NATOMS
     avs%v(i,1:3)=dbuf(i1+4:i1+6)
     avs%q(i)=dbuf(i1+7)
     avs%atype(i)=dbuf(i1+8)
-    qsfp(i)=dbuf(i1+9)
-    qsfv(i)=dbuf(i1+10)
+    qvt%qsfp(i)=dbuf(i1+9)
+    qvt%qsfv(i)=dbuf(i1+10)
 enddo
 deallocate(dbuf)
 
@@ -371,14 +377,15 @@ return
 end
 
 !--------------------------------------------------------------------------
-subroutine WriteBIN(mcx, avs, rxp, mpt, fileNameBase)
+subroutine WriteBIN(mcx, avs, qvt, rxp, mpt, fileNameBase)
 use atom_vars; use rxmd_params; use mpi_vars; use md_context
-use qeq_terms; use support_funcs
+use qeq_vars; use support_funcs
 !--------------------------------------------------------------------------
 implicit none
 
 type(md_context_type),intent(inout) :: mcx
 type(atom_var_type),intent(in) :: avs 
+type(qeq_var_type),intent(in) :: qvt
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
 
@@ -456,8 +463,8 @@ do i=1, mcx%NATOMS
    dbuf(j+4:j+6)=avs%v(i,1:3)
    dbuf(j+7)=avs%q(i)
    dbuf(j+8)=avs%atype(i)
-   dbuf(j+9)=qsfp(i)
-   dbuf(j+10)=qsfv(i)
+   dbuf(j+9)=qvt%qsfp(i)
+   dbuf(j+10)=qvt%qsfv(i)
 enddo
 call MPI_File_Write(fh,dbuf,10*mcx%NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 deallocate(dbuf)
@@ -471,3 +478,4 @@ mcx%it_timer(23)=mcx%it_timer(23)+(tj-ti)
 return
 end
 
+end module

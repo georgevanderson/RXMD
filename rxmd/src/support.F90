@@ -319,4 +319,69 @@ enddo
 return
 end
 
+
+!----------------------------------------------------------------
+subroutine GetBoxParams(H,la,lb,lc,angle1,angle2,angle3)
+!----------------------------------------------------------------
+implicit none
+real(8),intent(inout) :: H(3,3)
+real(8),intent(in) :: la,lb,lc, angle1,angle2,angle3
+real(8) :: hh1, hh2 , lal, lbe, lga
+real(8) :: pi=atan(1.d0)*4.d0
+
+!--- convet unit for angles
+lal=angle1*pi/180.d0
+lbe=angle2*pi/180.d0
+lga=angle3*pi/180.d0
+
+!--- construct H-matrix
+hh1=lc*(cos(lal)-cos(lbe)*cos(lga))/sin(lga)
+hh2=lc*sqrt( 1.d0-cos(lal)**2-cos(lbe)**2-cos(lga)**2 + &
+             2*cos(lal)*cos(lbe)*cos(lga) )/sin(lga)
+
+H(1,1)=la;          H(2,1)=0.d0;        H(3,1)=0.d0
+H(1,2)=lb*cos(lga); H(2,2)=lb*sin(lga); H(3,2)=0.d0
+H(1,3)=lc*cos(lbe); H(2,3)=hh1;         H(3,3)=hh2
+
+return
+end subroutine
+
+!----------------------------------------------------------------
+subroutine UpdateBoxParams(mcx, rxp)
+use md_context; use rxmd_params; use ff_params
+!----------------------------------------------------------------
+implicit none
+
+type(md_context_type),intent(inout) :: mcx
+type(rxmd_param_type),intent(in) :: rxp
+
+!--- get volume 
+mcx%MDBOX = &
+mcx%HH(1,1,0)*(mcx%HH(2,2,0)*mcx%HH(3,3,0) - mcx%HH(3,2,0)*mcx%HH(2,3,0)) + &
+mcx%HH(2,1,0)*(mcx%HH(3,2,0)*mcx%HH(1,3,0) - mcx%HH(1,2,0)*mcx%HH(3,3,0)) + &
+mcx%HH(3,1,0)*(mcx%HH(1,2,0)*mcx%HH(2,3,0) - mcx%HH(2,2,0)*mcx%HH(1,3,0))
+
+!--- get inverse of H-matrix
+call matinv(mcx%HH,mcx%HHi)
+
+!--- local box dimensions (a temporary use of lbox)
+mcx%LBOX(1)=mcx%lata/rxp%vprocs(1)
+mcx%LBOX(2)=mcx%latb/rxp%vprocs(2)
+mcx%LBOX(3)=mcx%latc/rxp%vprocs(3)
+
+!--- get the number of linkedlist cell per domain
+mcx%cc(1:3)=int(mcx%LBOX(1:3)/mcx%maxrc)
+
+!--- local system size in the unscaled coordinate.
+mcx%LBOX(1:3) = 1.d0/rxp%vprocs(1:3)
+
+!--- get the linkedlist cell dimensions (normalized)
+mcx%lcsize(1:3) = mcx%LBOX(1:3)/mcx%cc(1:3)
+
+!--- get origin of local MD box in the scaled coordiate.
+mcx%OBOX(1:3) = mcx%LBOX(1:3)*mcx%vID(1:3)
+
+return
+end
+
 end module

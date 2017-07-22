@@ -1,8 +1,12 @@
+module init_funcs
+
+contains
+
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITSYSTEM(mcx, ffp, avs, bos, rxp, cla, mpt)
-use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
-use ff_params; use md_context; use bo; use energy_terms; use MemoryAllocator
-use qeq_terms
+SUBROUTINE INITSYSTEM(mcx, ffp, avs, qvt, bos, rxp, cla, mpt)
+use md_context; use atom_vars; use rxmd_params; use cmdline_args; use mpi_vars
+use ff_params; use bo; use energy_terms; use fileio_funcs; use MemoryAllocator
+use support_funcs; use qeq_vars; use qeq_funcs
 ! This subroutine takes care of setting up initial system configuration.
 ! Unit conversion of parameters (energy, length & mass) are also done here.
 !------------------------------------------------------------------------------------------
@@ -13,6 +17,7 @@ type(mpi_var_type),intent(in) :: mpt
 type(cmdline_arg_type),intent(in) :: cla
 type(forcefield_params),intent(in) :: ffp 
 type(atom_var_type),intent(inout) :: avs
+type(qeq_var_type),intent(inout) :: qvt
 type(bo_var_type),intent(inout) :: bos
 type(rxmd_param_type),intent(inout) :: rxp
 
@@ -42,7 +47,7 @@ if(rxp%mdmode==0) then
 endif
 
 !--- square the spring const in the extended Lagrangian method 
-Lex_w2=2.d0*rxp%Lex_k/rxp%dt/rxp%dt
+qvt%Lex_w2=2.d0*rxp%Lex_k/rxp%dt/rxp%dt
 
 !--- setup the vector ID and parity for processes, in x, y and z order.
 mcx%vID(1)=mod(mpt%myid,rxp%vprocs(1))
@@ -81,11 +86,11 @@ do ity=1,ffp%nso
 enddo
 
 call initialize_atom_vars(avs, mcx%NBUFFER)
-call ReadBIN(mcx, avs, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
+call ReadBIN(mcx, avs, qvt, rxp, mpt, trim(cla%dataDir)//"/rxff.bin")
 
 call initialize_bo_vars(bos, mcx%NBUFFER)
 call initialize_energy_terms(mcx%NBUFFER)
-call initialize_qeq_terms(mcx%NBUFFER, MAXNEIGHBS10)
+call initialize_qeq_vars(qvt, mcx%NBUFFER, MAXNEIGHBS10)
 
 !--- get total number of atoms per type. This will be used to determine
 !--- subroutine cutofflength() 
@@ -100,15 +105,15 @@ call MPI_ALLREDUCE(mcx%natoms_per_type, mcx%ibuf8, ffp%nso, MPI_INTEGER8, MPI_SU
 mcx%natoms_per_type(1:ffp%nso)=mcx%ibuf8(1:ffp%nso)
 deallocate(mcx%ibuf8)
 
+!--- get global number of atoms
+i8=mcx%NATOMS ! Convert 4 byte to 8 byte
+call MPI_ALLREDUCE(i8, mcx%GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+
 !--- determine cutoff distances only for exsiting atom pairs
 call CUTOFFLENGTH(mcx, ffp)
 
 !--- update box-related variables
 call UpdateBoxParams(mcx, rxp)
-
-!--- get global number of atoms
-i8=mcx%NATOMS ! Convert 4 byte to 8 byte
-call MPI_ALLREDUCE(i8, mcx%GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
 #ifdef STRESS
 !--- stress variables
@@ -124,7 +129,6 @@ call allocatori1d(mcx%llist,1,mcx%NBUFFER)
 call allocatori3d(mcx%header,-MAXLAYERS,mcx%cc(1)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(2)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(3)-1+MAXLAYERS)
 call allocatori3d(mcx%nacell,-MAXLAYERS,mcx%cc(1)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(2)-1+MAXLAYERS,-MAXLAYERS,mcx%cc(3)-1+MAXLAYERS)
 
-
 !--- returning force index array 
 call allocatori1d(mcx%frcindx,1,mcx%NBUFFER)
 
@@ -136,7 +140,6 @@ rcsize(1) = mcx%lata/rxp%vprocs(1)/mcx%cc(1)
 rcsize(2) = mcx%latb/rxp%vprocs(2)/mcx%cc(2)
 rcsize(3) = mcx%latc/rxp%vprocs(3)/mcx%cc(3)
 maxrcell = maxval(rcsize(1:3))
-
 
 !--- setup 10[A] radius mesh to avoid visiting unecessary cells 
 call GetNonbondingMesh(mcx, ffp, rxp)
@@ -517,66 +520,4 @@ mcx%nblcsize(1:3)=mcx%nblcsize(1:3)/(/mcx%lata,mcx%latb,mcx%latc/)
 
 end subroutine
 
-!----------------------------------------------------------------
-subroutine GetBoxParams(H,la,lb,lc,angle1,angle2,angle3)
-!----------------------------------------------------------------
-implicit none
-real(8),intent(inout) :: H(3,3)
-real(8),intent(in) :: la,lb,lc, angle1,angle2,angle3
-real(8) :: hh1, hh2 , lal, lbe, lga
-real(8) :: pi=atan(1.d0)*4.d0
-
-!--- convet unit for angles
-lal=angle1*pi/180.d0
-lbe=angle2*pi/180.d0
-lga=angle3*pi/180.d0
-
-!--- construct H-matrix
-hh1=lc*(cos(lal)-cos(lbe)*cos(lga))/sin(lga)
-hh2=lc*sqrt( 1.d0-cos(lal)**2-cos(lbe)**2-cos(lga)**2 + &
-             2*cos(lal)*cos(lbe)*cos(lga) )/sin(lga)
-
-H(1,1)=la;          H(2,1)=0.d0;        H(3,1)=0.d0
-H(1,2)=lb*cos(lga); H(2,2)=lb*sin(lga); H(3,2)=0.d0
-H(1,3)=lc*cos(lbe); H(2,3)=hh1;         H(3,3)=hh2
-
-return
-end subroutine
-
-!----------------------------------------------------------------
-subroutine UpdateBoxParams(mcx, rxp)
-use md_context; use rxmd_params; use ff_params; use support_funcs
-!----------------------------------------------------------------
-implicit none
-
-type(md_context_type),intent(inout) :: mcx
-type(rxmd_param_type),intent(in) :: rxp
-
-!--- get volume 
-mcx%MDBOX = &
-mcx%HH(1,1,0)*(mcx%HH(2,2,0)*mcx%HH(3,3,0) - mcx%HH(3,2,0)*mcx%HH(2,3,0)) + &
-mcx%HH(2,1,0)*(mcx%HH(3,2,0)*mcx%HH(1,3,0) - mcx%HH(1,2,0)*mcx%HH(3,3,0)) + &
-mcx%HH(3,1,0)*(mcx%HH(1,2,0)*mcx%HH(2,3,0) - mcx%HH(2,2,0)*mcx%HH(1,3,0))
-
-!--- get inverse of H-matrix
-call matinv(mcx%HH,mcx%HHi)
-
-!--- local box dimensions (a temporary use of lbox)
-mcx%LBOX(1)=mcx%lata/rxp%vprocs(1)
-mcx%LBOX(2)=mcx%latb/rxp%vprocs(2)
-mcx%LBOX(3)=mcx%latc/rxp%vprocs(3)
-
-!--- get the number of linkedlist cell per domain
-mcx%cc(1:3)=int(mcx%LBOX(1:3)/mcx%maxrc)
-
-!--- local system size in the unscaled coordinate.
-mcx%LBOX(1:3) = 1.d0/rxp%vprocs(1:3)
-
-!--- get the linkedlist cell dimensions (normalized)
-mcx%lcsize(1:3) = mcx%LBOX(1:3)/mcx%cc(1:3)
-
-!--- get origin of local MD box in the scaled coordiate.
-mcx%OBOX(1:3) = mcx%LBOX(1:3)*mcx%vID(1:3)
-
-return
-end
+end module

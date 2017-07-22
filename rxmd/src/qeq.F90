@@ -1,47 +1,43 @@
-module qeq_terms
+!------------------------------------------------------------------------------
+module qeq_funcs
+!------------------------------------------------------------------------------
 
-! Two vectors electrostatic energy minimization 
-real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
-
-!--- variables for extended Lagrangian method ---
-!<Lex_fqs> fraction between two QEq vectors
-!<Lex_w> spring constant
-real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:)
-real(8),allocatable :: hessian(:,:)
-real(8) :: Lex_w=1.d0, Lex_w2=1.d0
-
-contains 
+contains
 
 !------------------------------------------------------------------------------
-subroutine initialize_qeq_terms(NBUFFER, MAXNEIGHBS10)
-use MemoryAllocator
+subroutine initialize_qeq_vars(qvt, NBUFFER, MAXNEIGHBS10)
+use qeq_vars; use MemoryAllocator
 !------------------------------------------------------------------------------
 implicit none
+
+type(qeq_var_type),intent(inout) :: qvt
 integer,intent(in) :: NBUFFER, MAXNEIGHBS10
 
 !--- 2 vector QEq varialbes
-call allocatord1d(qs,1,NBUFFER)
-call allocatord1d(gs,1,NBUFFER)
-call allocatord1d(qt,1,NBUFFER)
-call allocatord1d(gt,1,NBUFFER)
-call allocatord1d(hs,1,NBUFFER)
-call allocatord1d(hshs,1,NBUFFER)
-call allocatord1d(ht,1,NBUFFER)
-call allocatord1d(hsht,1,NBUFFER)
-call allocatord2d(hessian,1,MAXNEIGHBS10,1,NBUFFER)
-qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
+call allocatord1d(qvt%qs,1,NBUFFER)
+call allocatord1d(qvt%gs,1,NBUFFER)
+call allocatord1d(qvt%qt,1,NBUFFER)
+call allocatord1d(qvt%gt,1,NBUFFER)
+call allocatord1d(qvt%hs,1,NBUFFER)
+call allocatord1d(qvt%hshs,1,NBUFFER)
+call allocatord1d(qvt%ht,1,NBUFFER)
+call allocatord1d(qvt%hsht,1,NBUFFER)
+call allocatord2d(qvt%hessian,1,MAXNEIGHBS10,1,NBUFFER)
+qvt%qs(:)=0.d0; qvt%qt(:)=0.d0; qvt%gs(:)=0.d0; qvt%gt(:)=0.d0; 
+qvt%hs(:)=0.d0; qvt%ht(:)=0.d0; qvt%hshs(:)=0.d0; qvt%hsht(:)=0.d0
 
 !--- Varaiable for extended Lagrangian method
-call allocatord1d(qtfp,1,NBUFFER)
-call allocatord1d(qtfv,1,NBUFFER)
-qtfp(:)=0.d0; qtfv(:)=0.d0
+call allocatord1d(qvt%qtfp,1,NBUFFER)
+call allocatord1d(qvt%qtfv,1,NBUFFER)
+qvt%qtfp(:)=0.d0; qvt%qtfv(:)=0.d0
 
 end subroutine
 
+
 !------------------------------------------------------------------------------
-subroutine QEq(ffp, avs, mpt, rxp, mcx)
-use atom_vars; use md_context; use rxmd_params; use mpi_vars; use ff_params; use mpi_vars
-use list_funcs; 
+subroutine QEq(ffp, avs, qvt, mpt, rxp, mcx)
+use atom_vars; use md_context; use rxmd_params; use mpi_vars; use ff_params;
+use qeq_vars; use list_funcs; use comms
 ! Two vector electronegativity equilization routine
 !
 ! The linkedlist cell size is determined by the cutoff length of bonding 
@@ -55,6 +51,7 @@ implicit none
 
 type(forcefield_params),intent(in) :: ffp
 type(atom_var_type),intent(inout) ::avs 
+type(qeq_var_type),intent(inout) ::qvt
 type(rxmd_param_type),intent(in) :: rxp
 type(mpi_var_type),intent(in) :: mpt
 type(md_context_type),intent(inout) :: mcx
@@ -85,20 +82,20 @@ select case(rxp%isQEq)
   case (1) 
 !--- In the original QEq, fictitious charges are initialized with real charges
 !--- and set zero.
-    qsfp(1:NATOMS)=avs%q(1:NATOMS)
-    qsfv(1:NATOMS)=0.d0
+    qvt%qsfp(1:NATOMS)=avs%q(1:NATOMS)
+    qvt%qsfv(1:NATOMS)=0.d0
 !--- Initialization of the two vector QEq 
-    qs(:)=0.d0
-    qt(:)=0.d0
-    qs(1:NATOMS)=avs%q(1:NATOMS)
+    qvt%qs(:)=0.d0
+    qvt%qt(:)=0.d0
+    qvt%qs(1:NATOMS)=avs%q(1:NATOMS)
     nmax=rxp%NMAXQEq
 
 !=== Extended Lagrangian method ===!
   case(2)
 !--- charge mixing.
-    qs(1:NATOMS)=rxp%Lex_fqs*qsfp(1:NATOMS)+(1.d0-rxp%Lex_fqs)*avs%q(1:NATOMS)
+    qvt%qs(1:NATOMS)=rxp%Lex_fqs*qvt%qsfp(1:NATOMS)+(1.d0-rxp%Lex_fqs)*avs%q(1:NATOMS)
 !--- the same as the original QEq, set t vector zero
-    qt(1:NATOMS)=0.d0
+    qvt%qt(1:NATOMS)=0.d0
 !--- just run one step
     nmax=1
 
@@ -113,7 +110,7 @@ open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-call COPYATOMS(mcx, avs, mpt, MODE_COPY, QCopyDr)
+call COPYATOMS(mcx, avs, qvt, mpt, MODE_COPY, QCopyDr)
 call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%nblcsize, mcx%nbheader, mcx%nbllist, mcx%nbnacell, mcx%nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
@@ -129,14 +126,14 @@ enddo
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(mcx, avs, mpt, MODE_QCOPY1, QCopyDr)
+call COPYATOMS(mcx, avs, qvt, mpt, MODE_QCOPY1, QCopyDr)
 call get_gradient(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
-hs(1:NATOMS) = gs(1:NATOMS)
-ht(1:NATOMS) = gt(1:NATOMS)
+qvt%hs(1:NATOMS) = qvt%gs(1:NATOMS)
+qvt%ht(1:NATOMS) = qvt%gt(1:NATOMS)
 
-call COPYATOMS(mcx, avs, mpt, MODE_QCOPY2, QCopyDr)
+call COPYATOMS(mcx, avs, qvt, mpt, MODE_QCOPY2, QCopyDr)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -160,12 +157,12 @@ do nstep_qeq=0, nmax-1
   GEst2 = GEst1
 
 !--- line minimization factor of <s> vector
-  g_h(1) = dot_product(gs(1:NATOMS), hs(1:NATOMS))
-  h_hsh(1) = dot_product(hs(1:NATOMS), hshs(1:NATOMS))
+  g_h(1) = dot_product(qvt%gs(1:NATOMS), qvt%hs(1:NATOMS))
+  h_hsh(1) = dot_product(qvt%hs(1:NATOMS), qvt%hshs(1:NATOMS))
 
 !--- line minimization factor of <t> vector
-  g_h(2) = dot_product(gt(1:NATOMS), ht(1:NATOMS))
-  h_hsh(2) = dot_product(ht(1:NATOMS), hsht(1:NATOMS))
+  g_h(2) = dot_product(qvt%gt(1:NATOMS), qvt%ht(1:NATOMS))
+  h_hsh(2) = dot_product(qvt%ht(1:NATOMS), qvt%hsht(1:NATOMS))
 
   buf(1)=g_h(1);   buf(2)=g_h(2)
   buf(3)=h_hsh(1); buf(4)=h_hsh(2)
@@ -177,12 +174,12 @@ do nstep_qeq=0, nmax-1
   lmin(1:2) = g_h(1:2)/h_hsh(1:2)
 
 !--- line minimization for each vector
-  qs(1:NATOMS) = qs(1:NATOMS) + lmin(1)*hs(1:NATOMS)
-  qt(1:NATOMS) = qt(1:NATOMS) + lmin(2)*ht(1:NATOMS)
+  qvt%qs(1:NATOMS) = qvt%qs(1:NATOMS) + lmin(1)*qvt%hs(1:NATOMS)
+  qvt%qt(1:NATOMS) = qvt%qt(1:NATOMS) + lmin(2)*qvt%ht(1:NATOMS)
 
 !--- get a current electronegativity <mu>
-  ssum = sum(qs(1:NATOMS))
-  tsum = sum(qt(1:NATOMS))
+  ssum = sum(qvt%qs(1:NATOMS))
+  tsum = sum(qvt%qt(1:NATOMS))
   buf(1) = ssum; buf(2) = tsum
 
   Gbuf(:)=0.d0
@@ -192,21 +189,21 @@ do nstep_qeq=0, nmax-1
   mu = ssum/tsum
 
 !--- update atom charges
-  avs%q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
+  avs%q(1:NATOMS) = qvt%qs(1:NATOMS) - mu*qvt%qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(mcx, avs, mpt, MODE_QCOPY1, QCopyDr)
+  call COPYATOMS(mcx, avs, qvt, mpt, MODE_QCOPY1, QCopyDr)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
   call get_gradient(Gnew)
 
 !--- get new conjugate direction
-  hs(1:NATOMS) = gs(1:NATOMS) + (Gnew(1)/Gold(1))*hs(1:NATOMS)
-  ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
+  qvt%hs(1:NATOMS) = qvt%gs(1:NATOMS) + (Gnew(1)/Gold(1))*qvt%hs(1:NATOMS)
+  qvt%ht(1:NATOMS) = qvt%gt(1:NATOMS) + (Gnew(2)/Gold(2))*qvt%ht(1:NATOMS)
 
 !--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(mcx, avs, mpt, MODE_QCOPY2, QCopyDr)
+  call COPYATOMS(mcx, avs, qvt, mpt, MODE_QCOPY2, QCopyDr)
 
 enddo
 
@@ -284,7 +281,7 @@ do c3=0, mcx%nbcc(3)-1
 
                inxn = ffp%inxn2(ity, jty)
 
-               hessian(mcx%nbplist(i,0),i) = (1.d0-drtb)*mcx%TBL_Eclmb_QEq(itb,inxn) + drtb*mcx%TBL_Eclmb_QEq(itb+1,inxn)
+               qvt%hessian(mcx%nbplist(i,0),i) = (1.d0-drtb)*mcx%TBL_Eclmb_QEq(itb,inxn) + drtb*mcx%TBL_Eclmb_QEq(itb+1,inxn)
             endif
          endif
 
@@ -328,17 +325,17 @@ do i=1, NATOMS
    ity = nint(avs%atype(i))
    eta_ity = ffp%eta(ity)
 
-   hshs(i) = eta_ity*hs(i)
-   hsht(i) = eta_ity*ht(i)
+   qvt%hshs(i) = eta_ity*qvt%hs(i)
+   qvt%hsht(i) = eta_ity*qvt%ht(i)
 
    Est = Est + ffp%chi(ity)*avs%q(i) + 0.5d0*eta_ity*avs%q(i)*avs%q(i)
 
    do j1 = 1, mcx%nbplist(i,0)
       j = mcx%nbplist(i,j1)
-      hshs(i) = hshs(i) + hessian(j1,i)*hs(j)
-      hsht(i) = hsht(i) + hessian(j1,i)*ht(j)
+      qvt%hshs(i) = qvt%hshs(i) + qvt%hessian(j1,i)*qvt%hs(j)
+      qvt%hsht(i) = qvt%hsht(i) + qvt%hessian(j1,i)*qvt%ht(j)
 !--- get half of potential energy, then sum it up if atoms are resident.
-      Est1 = 0.5d0*hessian(j1,i)*avs%q(i)*avs%q(j)
+      Est1 = 0.5d0*qvt%hessian(j1,i)*avs%q(i)*avs%q(j)
       Est = Est + Est1
       if(j<=NATOMS) Est = Est + Est1
    enddo
@@ -373,21 +370,21 @@ do i=1,NATOMS
    gtsum=0.d0
    do j1=1, mcx%nbplist(i,0) 
       j = mcx%nbplist(i,j1)
-      gssum = gssum + hessian(j1,i)*qs(j)
-      gtsum = gtsum + hessian(j1,i)*qt(j)
+      gssum = gssum + qvt%hessian(j1,i)*qvt%qs(j)
+      gtsum = gtsum + qvt%hessian(j1,i)*qvt%qt(j)
    enddo
 
    ity = nint(avs%atype(i))
    eta_ity = ffp%eta(ity)
 
-   gs(i) = - ffp%chi(ity) - eta_ity*qs(i) - gssum
-   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
+   qvt%gs(i) = - ffp%chi(ity) - eta_ity*qvt%qs(i) - gssum
+   qvt%gt(i) = - 1.d0     - eta_ity*qvt%qt(i) - gtsum
 
 enddo 
 !$omp end parallel do
 
-ggnew(1) = dot_product(gs(1:NATOMS), gs(1:NATOMS))
-ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
+ggnew(1) = dot_product(qvt%gs(1:NATOMS), qvt%gs(1:NATOMS))
+ggnew(2) = dot_product(qvt%gt(1:NATOMS), qvt%gt(1:NATOMS))
 call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
 
 call system_clock(tj,tk)

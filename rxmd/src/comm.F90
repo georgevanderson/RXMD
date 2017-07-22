@@ -1,6 +1,10 @@
+module comms 
+
+contains 
+
 !--------------------------------------------------------------------------------------------------------------
-subroutine COPYATOMS(mcx, avs, mpt, imode, dr)
-use md_context; use atom_vars; use mpi_vars; use qeq_terms; use support_funcs
+subroutine COPYATOMS(mcx, avs, qvt, mpt, imode, dr)
+use md_context; use atom_vars; use mpi_vars; use support_funcs; use qeq_vars 
 !
 ! TODO: update notes here
 !
@@ -31,8 +35,9 @@ implicit none
 integer,intent(IN) :: imode 
 real(8),intent(IN) :: dr(3)
 
-type(atom_var_type) :: avs
-type(md_context_type) :: mcx
+type(atom_var_type),intent(inout) :: avs
+type(qeq_var_type),intent(inout) :: qvt 
+type(md_context_type),intent(inout) :: mcx
 type(mpi_var_type),intent(in) :: mpt
 
 ! normalized coordinate used to find atoms in buffer regions
@@ -120,10 +125,10 @@ if(imode==MODE_MOVE) then
         avs%v(ni,1:3) = avs%v(i,1:3)
         avs%atype(ni) = avs%atype(i)
         avs%q(ni) = avs%q(i)
-        qs(ni) = qs(i)
-        qt(ni) = qt(i)
-        qsfp(ni) = qsfp(i)
-        qsfv(ni) = qsfv(i)
+        qvt%qs(ni) = qvt%qs(i)
+        qvt%qt(ni) = qvt%qt(i)
+        qvt%qsfp(ni) = qvt%qsfp(i)
+        qvt%qsfv(ni) = qvt%qsfv(i)
       endif
    enddo 
 
@@ -274,10 +279,10 @@ if(imode/=MODE_CPBK) then
            sbuffer(ns+4:ns+6) = avs%v(n,1:3)
            sbuffer(ns+7) = avs%atype(n)
            sbuffer(ns+8) = avs%q(n)
-           sbuffer(ns+9) = qs(n)
-           sbuffer(ns+10) = qt(n)
-           sbuffer(ns+11) = qsfp(n)
-           sbuffer(ns+12) = qsfv(n)
+           sbuffer(ns+9) = qvt%qs(n)
+           sbuffer(ns+10) = qvt%qt(n)
+           sbuffer(ns+11) = qvt%qsfp(n)
+           sbuffer(ns+12) = qvt%qsfv(n)
   
 !--- In append_atoms subroutine, atoms with <atype>==-1 will be removed
            avs%atype(n) = -1.d0 
@@ -288,18 +293,18 @@ if(imode/=MODE_CPBK) then
            sbuffer(ns+4) = avs%atype(n)
            sbuffer(ns+5) = avs%q(n)
            sbuffer(ns+6) = dble(n)
-           sbuffer(ns+7) = qs(n)
-           sbuffer(ns+8) = qt(n)
-           sbuffer(ns+9) = hs(n)
-           sbuffer(ns+10) = ht(n)
+           sbuffer(ns+7) = qvt%qs(n)
+           sbuffer(ns+8) = qvt%qt(n)
+           sbuffer(ns+9) = qvt%hs(n)
+           sbuffer(ns+10) = qvt%ht(n)
 
         case(MODE_QCOPY1)
-           sbuffer(ns+1) = qs(n)
-           sbuffer(ns+2) = qt(n)
+           sbuffer(ns+1) = qvt%qs(n)
+           sbuffer(ns+2) = qvt%qt(n)
 
         case(MODE_QCOPY2)
-           sbuffer(ns+1) = hs(n)
-           sbuffer(ns+2) = ht(n)
+           sbuffer(ns+1) = qvt%hs(n)
+           sbuffer(ns+2) = qvt%ht(n)
            sbuffer(ns+3) = avs%q(n)
 
         case(MODE_STRESSCALC)
@@ -390,28 +395,28 @@ if(imode /= MODE_CPBK) then
               avs%v(m,1:3) = rbuffer(ine+4:ine+6)
               avs%atype(m) = rbuffer(ine+7)
               avs%q(m)  = rbuffer(ine+8)
-              qs(m) = rbuffer(ine+9)
-              qt(m) = rbuffer(ine+10)
-              qsfp(m) = rbuffer(ine+11)
-              qsfv(m) = rbuffer(ine+12)
+              qvt%qs(m) = rbuffer(ine+9)
+              qvt%qt(m) = rbuffer(ine+10)
+              qvt%qsfp(m) = rbuffer(ine+11)
+              qvt%qsfv(m) = rbuffer(ine+12)
       
          case(MODE_COPY)
               rnorm(m,1:3) = rbuffer(ine+1:ine+3)
               avs%atype(m) = rbuffer(ine+4)
               avs%q(m)  = rbuffer(ine+5)
               mcx%frcindx(m) = nint(rbuffer(ine+6))
-              qs(m) = rbuffer(ine+7)
-              qt(m) = rbuffer(ine+8)
-              hs(m) = rbuffer(ine+9)
-              ht(m) = rbuffer(ine+10)
+              qvt%qs(m) = rbuffer(ine+7)
+              qvt%qt(m) = rbuffer(ine+8)
+              qvt%hs(m) = rbuffer(ine+9)
+              qvt%ht(m) = rbuffer(ine+10)
       
            case(MODE_QCOPY1)
-              qs(m) = rbuffer(ine+1)
-              qt(m) = rbuffer(ine+2)
+              qvt%qs(m) = rbuffer(ine+1)
+              qvt%qt(m) = rbuffer(ine+2)
       
            case(MODE_QCOPY2)
-              hs(m) = rbuffer(ine+1)
-              ht(m) = rbuffer(ine+2)
+              qvt%hs(m) = rbuffer(ine+1)
+              qvt%ht(m) = rbuffer(ine+2)
               avs%q(m)  = rbuffer(ine+3)
 
            case(MODE_STRESSCALC)
@@ -524,3 +529,5 @@ endif
 end subroutine
 
 end subroutine COPYATOMS
+
+end module

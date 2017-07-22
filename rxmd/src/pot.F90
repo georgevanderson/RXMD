@@ -31,8 +31,9 @@ call allocatord1d(dDlp,1,NBUFFER)
 end subroutine
 
 !----------------------------------------------------------------------------------------------------------------------
-subroutine FORCE(ffp, mpt, bos, avs, mcx)
-use atom_vars; use mpi_vars; use ff_params; use md_context; use bo; use support_funcs; use list_funcs
+subroutine FORCE(ffp, mpt, bos, avs, qvt, mcx)
+use atom_vars; use qeq_vars; use mpi_vars; use ff_params; use md_context; use bo
+use support_funcs; use list_funcs; use comms
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -40,6 +41,7 @@ type(forcefield_params),intent(in) :: ffp
 type(mpi_var_type),intent(in) :: mpt
 type(bo_var_type),intent(inout) :: bos
 type(atom_var_type),intent(inout) :: avs 
+type(qeq_var_type),intent(inout) :: qvt
 type(md_context_type),intent(inout) :: mcx
 
 integer :: i, j, k
@@ -55,7 +57,7 @@ astr(:,:) = 0.d0
 #endif
 
 !--- cache atoms and create linkedlist for bonding and non-bonding neighbor lists. 
-call COPYATOMS(mcx, avs, mpt, MODE_COPY, NMINCELL*mcx%lcsize(1:3))
+call COPYATOMS(mcx, avs, qvt, mpt, MODE_COPY, NMINCELL*mcx%lcsize(1:3))
 
 call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%lcsize, mcx%header, mcx%llist, mcx%nacell, mcx%cc, MAXLAYERS)
 call LINKEDLIST(mcx, avs%atype, avs%pos, mcx%nblcsize, mcx%nbheader, mcx%nbllist, mcx%nbnacell, mcx%nbcc, MAXLAYERS_NB)
@@ -85,7 +87,7 @@ CALL E4b(mcx, ffp, bos, avs%atype, avs%pos, avs%f, mcx%PE)
 
 CALL ForceBondedTerms(NMINCELL, mcx, bos, avs%pos, avs%f)
 
-CALL COPYATOMS(mcx, avs, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
+CALL COPYATOMS(mcx, avs, qvt, mpt, MODE_CPBK, [0.d0, 0.d0, 0.d0])
 
 #ifdef RFDUMP
 open(81,file="rfdump"//trim(rankToString(myid))//".txt")
@@ -103,7 +105,7 @@ close(81)
 
 !--- calculate kinetic part of stress components and add to <astr>.
 #ifdef STRESS
-call stress()
+call stress(mcx,ffp%mass, avs, qvt, mpt)
 #endif
 
 return
