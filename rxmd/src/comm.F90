@@ -183,17 +183,17 @@ if (mypar == 0) then
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! if ns == 0, send one double to tell remote rank that there will be no atom data to be sent. 
      if (ns > 0) then 
-       call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 10, MPI_COMM_WORLD, ierr)
+       call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 10, mpt%mycomm, ierr)
      else
-       call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 10, MPI_COMM_WORLD, ierr)
+       call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 10, mpt%mycomm, ierr)
      endif
 
-     call MPI_Probe(tn2, 11, MPI_COMM_WORLD, recv_stat, ierr)
+     call MPI_Probe(tn2, 11, mpt%mycomm, recv_stat, ierr)
      call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr)
 
      call CheckSizeThenReallocate(rbuffer,nr)
 
-     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 11, MPI_COMM_WORLD, recv_stat, ierr)
+     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 11, mpt%mycomm, recv_stat, ierr)
 
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! nr == 1 means no atom data to be received. 
@@ -201,21 +201,21 @@ if (mypar == 0) then
 
 elseif (mypar == 1) then
 
-     call MPI_Probe(tn2, 10, MPI_COMM_WORLD, recv_stat, ierr)
+     call MPI_Probe(tn2, 10, mpt%mycomm, recv_stat, ierr)
      call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr)
 
      call CheckSizeThenReallocate(rbuffer,nr)
 
-     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10, MPI_COMM_WORLD, recv_stat, ierr)
+     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10, mpt%mycomm, recv_stat, ierr)
 
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! nr == 1 means no atom data to be received. 
      if(nr==1) nr=0 
 
      if (ns > 0) then
-        call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 11, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 11, mpt%mycomm, ierr)
      else
-        call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 11, MPI_COMM_WORLD, ierr)
+        call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 11, mpt%mycomm, ierr)
      endif
 
 endif

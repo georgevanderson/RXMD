@@ -141,12 +141,12 @@ do nstep_qeq=0, nmax-1
 
 #ifdef QEQDUMP 
   qsum = sum(q(1:NATOMS))
-  call MPI_ALLREDUCE(qsum, gqsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+  call MPI_ALLREDUCE(qsum, gqsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 #endif
 
   call get_hsh(Est)
 
-  call MPI_ALLREDUCE(Est, GEst1, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+  call MPI_ALLREDUCE(Est, GEst1, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 
 #ifdef QEQDUMP 
   if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
@@ -167,7 +167,7 @@ do nstep_qeq=0, nmax-1
   buf(1)=g_h(1);   buf(2)=g_h(2)
   buf(3)=h_hsh(1); buf(4)=h_hsh(2)
   Gbuf(:)=0.d0
-  call MPI_ALLREDUCE(buf, Gbuf, 4,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
+  call MPI_ALLREDUCE(buf, Gbuf, 4,MPI_DOUBLE_PRECISION,MPI_SUM,mpt%mycomm, ierr)
   g_h(1) = Gbuf(1);   g_h(2) = Gbuf(2)
   h_hsh(1) = Gbuf(3); h_hsh(2) = Gbuf(4)
 
@@ -183,7 +183,7 @@ do nstep_qeq=0, nmax-1
   buf(1) = ssum; buf(2) = tsum
 
   Gbuf(:)=0.d0
-  call MPI_ALLREDUCE(buf, Gbuf, 2, MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD, ierr)
+  call MPI_ALLREDUCE(buf, Gbuf, 2, MPI_DOUBLE_PRECISION,MPI_SUM,mpt%mycomm, ierr)
   ssum=Gbuf(1); tsum=Gbuf(2)
 
   mu = ssum/tsum
@@ -385,7 +385,7 @@ enddo
 
 ggnew(1) = dot_product(qvt%gs(1:NATOMS), qvt%gs(1:NATOMS))
 ggnew(2) = dot_product(qvt%gt(1:NATOMS), qvt%gt(1:NATOMS))
-call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, mpt%mycomm, ierr)
 
 call system_clock(tj,tk)
 mcx%it_timer(19)=mcx%it_timer(19)+(tj-ti)

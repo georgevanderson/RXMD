@@ -83,17 +83,17 @@ if( (baseCharPerAtom+MAXNEIGHBS*(1+12+6)) > MaxBNDLineSize) then
                     mpt%myid, baseCharPerAtom+MAXNEIGHBS*(1+12+6), MaxBNDLineSize
 endif
 
-call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".bnd", &
+call MPI_File_Open(mpt%mycomm,trim(fileNameBase)//".bnd", &
     MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
 
 ! offset will point the end of local write after the scan
-call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,mpt%mycomm,ierr)
 
 ! since offset is MPI_OFFSET_KIND and localDataSize is integer, use an integer as buffer
 offset=scanbuf
 
 ! nprocs-1 rank has the total data size
-call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,MPI_COMM_WORLD,ierr)
+call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,mpt%mycomm,ierr)
 fileSize=scanbuf
 
 call MPI_File_set_size(fh, fileSize, ierr)
@@ -147,7 +147,7 @@ endif
 
 deallocate(BNDAllLines) 
 
-call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+call MPI_BARRIER(mpt%mycomm, ierr)
 call MPI_File_Close(fh,ierr)
 
 call system_clock(tj,tk)
@@ -189,17 +189,17 @@ call system_clock(ti,tk)
 ! get local datasize
 localDataSize=mcx%NATOMS*PDBLineSize
 
-call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".pdb", &
+call MPI_File_Open(mpt%mycomm,trim(fileNameBase)//".pdb", &
      MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
 
 ! offset will point the end of local write after the scan
-call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,mpt%mycomm,ierr)
 
 ! since offset is MPI_OFFSET_KIND and localDataSize is integer, use an integer as buffer
 offset=scanbuf
 
 ! nprocs-1 rank has the total data size
-call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,MPI_COMM_WORLD,ierr)
+call MPI_Bcast(scanbuf,1,MPI_INTEGER,mpt%nprocs-1,mpt%mycomm,ierr)
 fileSize=scanbuf
 
 call MPI_File_set_size(fh, fileSize, ierr)
@@ -242,7 +242,7 @@ endif
 
 deallocate(PDBAllLines)
 
-call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+call MPI_BARRIER(mpt%mycomm, ierr)
 call MPI_File_Close(fh,ierr)
 
 100 format(A6,I5,1x,A2,i12,4x,3f8.3,f6.2,f6.2)
@@ -300,7 +300,7 @@ nmeta=4+mpt%nprocs+1
 allocate(idata(nmeta))
 metaDataSize = 4*nmeta + 8*6
 
-call MPI_File_Open(MPI_COMM_WORLD,trim(fileName),MPI_MODE_RDONLY,MPI_INFO_NULL,fh,ierr)
+call MPI_File_Open(mpt%mycomm,trim(fileName),MPI_MODE_RDONLY,MPI_INFO_NULL,fh,ierr)
 
 ! read metadata at the beginning of file
 offsettmp=0
@@ -321,14 +321,14 @@ mcx%lalpha=ddata(4); mcx%lbeta=ddata(5); mcx%lgamma=ddata(6)
 localDataSize = 8*mcx%NATOMS*10
 
 ! offset will point the end of local write after the scan
-call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,mpt%mycomm,ierr)
 
 ! Since offset is MPI_OFFSET_KIND and localDataSize is integer, use an integer as buffer
 offset = scanbuf + metaDataSize
 
 ! nprocs-1 rank has the total data size
 fileSize = offset
-!call MPI_Bcast(fileSize,1,MPI_INTEGER,nprocs-1,MPI_COMM_WORLD,ierr)
+!call MPI_Bcast(fileSize,1,MPI_INTEGER,nprocs-1,mpt%mycomm,ierr)
 !call MPI_File_set_size(fh, fileSize, ierr)
 
 ! set offset at the beginning of the local write
@@ -358,7 +358,7 @@ do i=1, mcx%NATOMS
 enddo
 deallocate(dbuf)
 
-call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+call MPI_BARRIER(mpt%mycomm, ierr)
 call MPI_File_Close(fh,ierr)
 
 call GetBoxParams(mat,mcx%lata,mcx%latb,mcx%latc,mcx%lalpha,mcx%lbeta,mcx%lgamma)
@@ -421,10 +421,10 @@ metaDataSize = 4*nmeta + 8*6
 ! Get local datasize: 10 doubles for each atoms
 localDataSize = 8*mcx%NATOMS*10
 
-call MPI_File_Open(MPI_COMM_WORLD,trim(fileNameBase)//".bin",MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
+call MPI_File_Open(mpt%mycomm,trim(fileNameBase)//".bin",MPI_MODE_WRONLY+MPI_MODE_CREATE,MPI_INFO_NULL,fh,ierr)
 
 ! offset will point the end of local write after the scan
-call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_Scan(localDataSize,scanbuf,1,MPI_INTEGER,MPI_SUM,mpt%mycomm,ierr)
 
 ! Since offset is MPI_OFFSET_KIND and localDataSize is integer, use an integer as buffer
 offset = scanbuf + metaDataSize
@@ -433,7 +433,7 @@ offset = scanbuf + metaDataSize
 allocate(ldata(nmeta),gdata(nmeta))
 ldata(:)=0
 ldata(4+mpt%myid+1)=mcx%NATOMS
-call MPI_ALLREDUCE(ldata,gdata,nmeta,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_ALLREDUCE(ldata,gdata,nmeta,MPI_INTEGER,MPI_SUM,mpt%mycomm,ierr)
 gdata(1)=mpt%nprocs
 gdata(2:4)=rxp%vprocs
 gdata(nmeta)=mcx%nstep+mcx%current_step
@@ -469,7 +469,7 @@ enddo
 call MPI_File_Write(fh,dbuf,10*mcx%NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr)
 deallocate(dbuf)
 
-call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+call MPI_BARRIER(mpt%mycomm, ierr)
 call MPI_File_Close(fh,ierr)
 
 call system_clock(tj,tk)

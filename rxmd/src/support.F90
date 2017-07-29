@@ -93,12 +93,14 @@ endif
 wt0 = MPI_WTIME()
 end subroutine
 !----------------------------------------------------------------------
-subroutine angular_momentum(mcx, mass, atype, pos, v)
+subroutine angular_momentum(mcx, mpt, mass, atype, pos, v)
 use md_context; use ff_params; use mpi_vars
 !----------------------------------------------------------------------
 implicit none
 
 type(md_context_type),intent(in) :: mcx
+type(mpi_var_type),intent(in) :: mpt
+
 real(8),allocatable,dimension(:) :: mass
 real(8),allocatable :: atype(:), pos(:,:),v(:,:)
 
@@ -116,8 +118,8 @@ do i=1, mcx%NATOMS
    com(1:3) = mass(ity)*pos(i,1:3)
 enddo
 
-call MPI_ALLREDUCE(mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(com, Gcom, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
+call MPI_ALLREDUCE(com, Gcom, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 Gcom(1:3) = Gcom(1:3)/Gmm
 
 
@@ -145,8 +147,8 @@ do i=1, mcx%NATOMS
    intsr(3,2) = intsr(2,3)
 enddo
 
-call MPI_ALLREDUCE(angm, Gangm, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(intsr, Gintsr, 9, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(angm, Gangm, 3, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
+call MPI_ALLREDUCE(intsr, Gintsr, 9, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 
 !--- get angular velocity
 call matinv(Gintsr, intsr_i)

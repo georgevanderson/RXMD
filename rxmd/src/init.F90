@@ -101,13 +101,13 @@ do i=1, mcx%NATOMS
    mcx%natoms_per_type(ity)=mcx%natoms_per_type(ity)+1
 enddo
 
-call MPI_ALLREDUCE(mcx%natoms_per_type, mcx%ibuf8, ffp%nso, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(mcx%natoms_per_type, mcx%ibuf8, ffp%nso, MPI_INTEGER8, MPI_SUM, mpt%mycomm, ierr)
 mcx%natoms_per_type(1:ffp%nso)=mcx%ibuf8(1:ffp%nso)
 deallocate(mcx%ibuf8)
 
 !--- get global number of atoms
 i8=mcx%NATOMS ! Convert 4 byte to 8 byte
-call MPI_ALLREDUCE(i8, mcx%GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(i8, mcx%GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  mpt%mycomm, ierr)
 
 !--- determine cutoff distances only for exsiting atom pairs
 call CUTOFFLENGTH(mcx, ffp)
@@ -150,7 +150,7 @@ do i=1, mcx%NATOMS
    ity = nint(avs%atype(i))
    mm = mm + ffp%mass(ity)
 enddo
-call MPI_ALLREDUCE (mm, gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE (mm, gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 dns=gmm/mcx%MDBOX*UDENS
 
 !--- allocate & initialize Array size Stat variables
@@ -210,7 +210,7 @@ endif
 END SUBROUTINE
 
 !------------------------------------------------------------------------------------------
-SUBROUTINE INITVELOCITY(mcx, ffp, atype, v, treq)
+SUBROUTINE INITVELOCITY(mcx, ffp, atype, v, mpt, treq)
 use ff_params; use md_context; use mpi_vars
 ! Generate gaussian distributed velocity as an initial value  using Box-Muller algorithm
 !------------------------------------------------------------------------------------------
@@ -219,6 +219,7 @@ implicit none
 real(8),intent(in) :: treq
 type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
+type(mpi_var_type),intent(in) :: mpt
 real(8) :: atype(mcx%NBUFFER)
 real(8) :: v(3,mcx%NBUFFER)
 
@@ -257,8 +258,8 @@ do i=1, mcx%NATOMS
    mm = mm + ffp%mass(ity)
 enddo
  
-call MPI_ALLREDUCE (vCM, GvCM, size(vCM), MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE (mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE (vCM, GvCM, size(vCM), MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
+call MPI_ALLREDUCE (mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 
 !--- get the global momentum
 GvCM(:)=GvCM(:)/Gmm
@@ -272,7 +273,7 @@ do i=1, mcx%NATOMS
    mcx%KE = mcx%KE + mcx%hmas(ity)*sum( v(i,1:3)*v(i,1:3) )
 enddo
 
-call MPI_ALLREDUCE (mcx%KE, mcx%GKE, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE (mcx%KE, mcx%GKE, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  mpt%mycomm, ierr)
 mcx%GKE = mcx%GKE/mcx%GNATOMS
 
 !--- scale the obtained velocity to get the initial temperature.

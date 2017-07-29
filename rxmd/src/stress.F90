@@ -50,7 +50,7 @@ do i=1, mcx%NATOMS
    dbuf(1:6)=dbuf(1:6)+mcx%astr(1:6,i)
 enddo
 
-call MPI_ALLREDUCE(dbuf,Gdbuf,size(dbuf),MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,ierr)
+call MPI_ALLREDUCE(dbuf,Gdbuf,size(dbuf),MPI_DOUBLE_PRECISION,MPI_SUM,mpt%mycomm,ierr)
 
 dbuf(1:6)=Gdbuf(1:6)/mcx%MDBOX
 mcx%pint(1,1)=dbuf(1) !xx

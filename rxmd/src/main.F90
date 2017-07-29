@@ -62,7 +62,7 @@ do nstep=0, rxp%ntime_step-1
    endif
 
    if(mod(nstep,rxp%sstep)==0.and.(rxp%mdmode==0.or.rxp%mdmode==6)) &
-      call INITVELOCITY(mcx, ffp, avs%atype, avs%v, rxp%treq)
+      call INITVELOCITY(mcx, ffp, avs%atype, avs%v, mpt, rxp%treq)
 
    if(mod(nstep,rxp%sstep)==0.and.rxp%mdmode==7) &
       call ScaleTemperature(mcx, ffp, mpt, rxp%treq, avs%atype, avs%v)
@@ -104,19 +104,19 @@ if(rxp%isBinary) call WriteBIN(mcx, avs, qvt, rxp, mpt, GetFileNameBase(cla%data
 call system_clock(it2,irt)
 mcx%it_timer(Ntimer)=(it2-it1)
 
-call FinalizeMD(mcx, mpt%myid, irt)
+call FinalizeMD(mcx, mpt, irt)
 
 call MPI_FINALIZE(ierr)
 end PROGRAM
 
 !------------------------------------------------------------------------------
-subroutine FinalizeMD(mcx, myid, irt)
+subroutine FinalizeMD(mcx, mpt, irt)
 use md_context; use MemoryAllocator; use mpi_vars
 !------------------------------------------------------------------------------
 implicit none
 
 type(md_context_type),intent(in) :: mcx
-integer,intent(in) :: myid
+type(mpi_var_type),intent(in) :: mpt
 integer,intent(in) :: irt ! time resolution
 integer,allocatable :: ibuf(:),ibuf1(:)
 
@@ -129,12 +129,12 @@ ibuf(:)=0
 do i=1,nmaxas
    ibuf(i)=maxval(mcx%maxas(:,i))
 enddo
-call MPI_ALLREDUCE(ibuf, ibuf1, nmaxas, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(ibuf, ibuf1, nmaxas, MPI_INTEGER, MPI_MAX, mpt%mycomm, ierr)
 
-call MPI_ALLREDUCE(mcx%it_timer, it_timer_max, Ntimer, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
-call MPI_ALLREDUCE(mcx%it_timer, it_timer_min, Ntimer, MPI_INTEGER, MPI_MIN, MPI_COMM_WORLD, ierr)
+call MPI_ALLREDUCE(mcx%it_timer, it_timer_max, Ntimer, MPI_INTEGER, MPI_MAX, mpt%mycomm, ierr)
+call MPI_ALLREDUCE(mcx%it_timer, it_timer_min, Ntimer, MPI_INTEGER, MPI_MIN, mpt%mycomm, ierr)
 
-if(myid==0) then
+if(mpt%myid==0) then
    print'(a)','----------------------------------------------'
    print'(a20,i12)', 'MAXNEIGHBS: ', ibuf1(2)
    print'(a20,i12)', 'MAXNEIGHBS10: ', ibuf1(3)
