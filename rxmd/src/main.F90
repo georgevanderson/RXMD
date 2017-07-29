@@ -33,7 +33,9 @@ CALL GETPARAMS(ffp, cla%FFPath, mcx%FFDescript)
 CALL INITSYSTEM(mcx, ffp, avs, qvt, bos, rxp, cla, mpt)
 
 !!FIXME!!
-!if(rxp%mdmode==10) call ConjugateGradient(ffp, mpt, bos, avs, avs%atype, avs%pos, rxp%ftol)
+!!if(rxp%mdmode==10) call ConjugateGradient(ffp, mpt, bos, avs, avs%atype, avs%pos, rxp%ftol)
+!if(rxp%mdmode==10) call ConjugateGradient((ffp, avs, mcx, rxp, avs%atype, avs%pos, cla, mpt, ftol)
+
 
 call QEq(ffp, avs, qvt, mpt, rxp, mcx)
 call FORCE(ffp, mpt, bos, avs, qvt, mcx)
