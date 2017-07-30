@@ -1,6 +1,6 @@
 !---------------------------------------------------------------------------------
 module CG
-use atom_vars; use energy_terms; use bo; use qeq_vars; use qeq_funcs
+use atom_vars; use energy_terms; use bo; use qeq_vars; use qeq_funcs; use comms
 !---------------------------------------------------------------------------------
 integer,parameter :: CG_MaxMinLoop = 500
 integer,parameter :: CG_MaxLineMinLoop = 100
@@ -22,8 +22,8 @@ real(8),parameter :: CG_EPS= 1d-16 ! a check to emit warning message
 
 !--- these vars are mostly used as placeholder and allocated in the CG initializer.
 type(atom_var_type) :: avsTmp
-type(bo_var_type) :: bos
-type(qeq_var_type) :: qvt
+type(bo_var_type) :: bos_cg
+type(qeq_var_type) :: qvt_cg
 
 contains
 
@@ -35,15 +35,15 @@ use md_context; use atom_vars; use bo; use qeq_vars; use qeq_funcs
    type(md_context_type),intent(inout) :: mcx
 
    call initialize_atom_vars(avsTmp,mcx%NBUFFER) 
-   call initialize_bo_vars(bos, mcx%NBUFFER)
-   call initialize_qeq_vars(qvt, mcx%NBUFFER, MAXNEIGHBS10)
+   call initialize_bo_vars(bos_cg, mcx%NBUFFER)
+   call initialize_qeq_vars(qvt_cg, mcx%NBUFFER, MAXNEIGHBS10)
    
 end subroutine
 
 !---------------------------------------------------------------------------------
 subroutine ConjugateGradient(ffp, avs, mcx, rxp, atype, pos, cla, mpt, ftol)
 use md_context; use ff_params; use bo; use cmdline_args; use mpi_vars; 
-use qeq_vars; use qeq_funcs; use rxmd_params; use ff_params; 
+use qeq_vars; use qeq_funcs; use rxmd_params; use ff_params; use fileio_funcs
 !---------------------------------------------------------------------------------
 implicit none
 
@@ -68,7 +68,6 @@ real(8) :: GPE(0:13),GPEold,GPEnew
 
 real(8) :: vnorm, stepl, beta1,beta2,beta3
 
-
 integer :: cgLoop, i
 
 CG_tol = ftol
@@ -77,8 +76,8 @@ v(:,:)=0.d0
 if(mpt%myid==0) print'(a40,1x,es10.2)', NEW_LINE('A')//'Start structural optimization.', ftol
 
 
-call QEq(ffp, avs, qvt, mpt, rxp, mcx)
-call FORCE(ffp, mpt, bos, avs, qvt, mcx)
+call QEq(ffp, avs, qvt_cg, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos_cg, avs, qvt_cg, mcx)
 gnew(1:mcx%NATOMS,1:3) = avs%f(1:mcx%NATOMS,1:3) !!!!! FIXME, need to return gnew from FORCE()
 
 !--- initialize search direction with gradient
@@ -98,10 +97,10 @@ do cgLoop = 0, CG_MaxMinLoop-1
    call LineMinimization(avs,ffp,mcx,rxp,mpt, avs%atype,avs%pos,p,gnew,stepl)
    gold(1:mcx%NATOMS,1:3)=gnew(1:mcx%NATOMS,1:3)
 
-   call QEq(ffp, avs, qvt, mpt, rxp, mcx)
-   call FORCE(ffp, mpt, bos, avs, qvt, mcx)
+   call QEq(ffp, avs, qvt_cg, mpt, rxp, mcx)
+   call FORCE(ffp, mpt, bos_cg, avs, qvt_cg, mcx)
 
-   call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
+   call OUTPUT(mcx, ffp, avs, qvt_cg, bos_cg, rxp, mpt, GetFileNameBase(cla%dataDir, cgLoop))
 
    GPEold=GPEnew
    mcx%PE(0)=sum(mcx%PE(1:13))
@@ -109,9 +108,10 @@ do cgLoop = 0, CG_MaxMinLoop-1
    GPEnew=GPE(0)
 
    if(abs(GPEnew-GPEold)<=CG_tol*mcx%GNATOMS) then
-      if(mpt%myid==0) print'(a30,i6)','Energy converged.', cgLoop
+      if(mpt%myid==0) print'(a30,i6)','Energy minimum was found. Exiting CG loop.', cgLoop
 
-      call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
+      !call OUTPUT(atype, pos, v, q, GetFileNameBase(cla%dataDir, cgLoop))
+      call OUTPUT(mcx, ffp, avs, qvt_cg, bos_cg, rxp, mpt, GetFileNameBase(cla%dataDir, cgLoop))
       exit
    endif
 
@@ -137,6 +137,7 @@ end subroutine ConjugateGradient
 !---------------------------------------------------------------------------------
 subroutine BracketSearchRange(avs,ffp,mcx,rxp,mpt ,atype,pos,p,stepl) 
 use atom_vars; use md_context; use ff_params;use mpi_vars; use rxmd_params;
+use fileio_funcs;
 ! input: atom type, initial coordinate, and search direction.
 ! output: step length to bracket an energy minimum along the search direction.
 !---------------------------------------------------------------------------------
@@ -178,9 +179,8 @@ do bracketingLoop = 0, CG_MaxBracketLoop-1
 
 enddo 
 
-if(mpt%myid==0) print'(a)', &
-'bracket was not found. saving the last configuration and terminating structural optimization'
-call OUTPUT(atype, pos, vdummy, qdummy, "nobracket")
+if(mpt%myid==0) print'(a)', 'bracket was not found. terminating the structural optimization'
+!call OUTPUT(atype, pos, vdummy, qdummy, "nobracket")
 
 stop
 
@@ -218,8 +218,8 @@ integer :: NATOMSTmp
 ! Evaluate df(x) and f(x)
 !call QEq(atype, pos, qTmp)
 !call FORCE(atype, pos, fbefore, qTmp)
-call QEq(ffp, avs, qvt, mpt, rxp, mcx)
-call FORCE(ffp, mpt, bos, avs, qvt, mcx)
+call QEq(ffp, avs, qvt_cg, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos_cg, avs, qvt_cg, mcx)
 fbefore(1:mcx%NATOMS,1:3)=avs%f(1:mcx%NATOMS,1:3) !!! FIXME need to return fbefore from FORCE()
 
 mcx%PE(0)=sum(mcx%PE(1:13))
@@ -237,9 +237,9 @@ NATOMSTmp = mcx%NATOMS
 !call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0], atypeTmp, posTmp, vdummy, fafter, qTmp)
 !call QEq(atypeTmp, posTmp, qTmp)
 !call FORCE(atypeTmp, posTmp, fafter, qTmp)
-call COPYATOMS(mcx, avsTmp, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
-call QEq(ffp, avsTmp, qvt, mpt, rxp, mcx)
-call FORCE(ffp, mpt, bos, avsTmp, qvt, mcx)
+call COPYATOMS(mcx, avsTmp, qvt_cg, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+call QEq(ffp, avsTmp, qvt_cg, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos_cg, avsTmp, qvt_cg, mcx)
 fafter(1:mcx%NATOMS,1:3)=avsTmp%f(1:mcx%NATOMS,1:3)
 
 ! we have p, fbefore, and fafter vectors now. the dot_product between p&fbefore is trivial but 
@@ -263,7 +263,7 @@ avsTmp%pos(1:mcx%NATOMS,1:3)=avs%pos(1:mcx%NATOMS,1:3)+stepl*p(1:mcx%NATOMS,1:3)
 avsTmp%v(1:mcx%NATOMS,1:3)=p(1:mcx%NATOMS,1:3)
 avsTmp%atype(1:mcx%NATOMS)=avs%atype(1:mcx%NATOMS)
 !call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],atypeTmp,posTmp,pTmp,vdummy,qTmp)
-call COPYATOMS(mcx, avsTmp, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+call COPYATOMS(mcx, avsTmp, qvt_cg, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
 
 !pDotdFShift = DotProductVec3D(pTmp,fafter,NATOMS)
 pDotdFShift = DotProductVec3D(avsTmp%v,fafter,mcx%NATOMS, mpt)
@@ -310,7 +310,7 @@ NATOMStmp = MigrateVec3D(mcx, mpt, avs%pos, p, g, stepl)
 ! Then, migrate atom type, position, and search vector; atype, pos, p.
 avs%pos(1:mcx%NATOMS,1:3)=avs%pos(1:mcx%NATOMS,1:3)+stepl*p(1:mcx%NATOMS,1:3)
 !call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0], atype, pos, p, fdummy, q)
-call COPYATOMS(mcx, avs, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+call COPYATOMS(mcx, avs, qvt_cg, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
 
 return
 end subroutine LineMinimization
@@ -393,7 +393,7 @@ NATOMSTmp=mcx%NATOMS
 avsTmp%pos(1:mcx%NATOMS,1:3)=pos(1:mcx%NATOMS,1:3)+stepl*dir(1:mcx%NATOMS,1:3)
 avsTmp%v(1:mcx%NATOMS,1:3)=vec(1:mcx%NATOMS,1:3)
 !call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0], atypedummy, posTmp, vec, fdummy, qdummy)
-call COPYATOMS(mcx, avsTmp, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+call COPYATOMS(mcx, avsTmp, qvt_cg, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
 
 !-- this NATOMS is consistent with the migrated vector.
 newNATOMS=mcx%NATOMS
@@ -483,9 +483,9 @@ NATOMSTmp = mcx%NATOMS
 !call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0], atypeTmp, posTmp, vdummy, fTmp, qTmp)
 !call QEq(atypeTmp, posTmp, qTmp)
 !call FORCE(atypeTmp, posTmp, fTmp, qTmp)
-call COPYATOMS(mcx, avsTmp, qvt, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
-call QEq(ffp, avsTmp, qvt, mpt, rxp, mcx)
-call FORCE(ffp, mpt, bos, avsTmp, qvt, mcx)
+call COPYATOMS(mcx, avsTmp, qvt_cg, mpt, MODE_MOVE, [0.d0, 0.d0, 0.d0])
+call QEq(ffp, avsTmp, qvt_cg, mpt, rxp, mcx)
+call FORCE(ffp, mpt, bos_cg, avsTmp, qvt_cg, mcx)
 
 mcx%NATOMS = NATOMSTmp 
 

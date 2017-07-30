@@ -2,8 +2,7 @@
 program rxmd
 use atom_vars; use bo; use md_context; use rxmd_params; use cmdline_args; use mpi_vars
 use ff_params; use energy_terms; use support_funcs; use comms; use fileio_funcs
-use init_funcs; use qeq_vars; use qeq_funcs
-!use CG !!FIXME!!
+use init_funcs; use qeq_vars; use qeq_funcs; use cg
 !------------------------------------------------------------------------------
 implicit none
 integer :: i,it1,it2,irt,provided, nstep, ierr
@@ -32,10 +31,7 @@ CALL GETPARAMS(ffp, cla%FFPath, mcx%FFDescript)
 !--- initialize the MD system
 CALL INITSYSTEM(mcx, ffp, avs, qvt, bos, rxp, cla, mpt)
 
-!!FIXME!!
-!!if(rxp%mdmode==10) call ConjugateGradient(ffp, mpt, bos, avs, avs%atype, avs%pos, rxp%ftol)
-!if(rxp%mdmode==10) call ConjugateGradient((ffp, avs, mcx, rxp, avs%atype, avs%pos, cla, mpt, ftol)
-
+if(rxp%mdmode==10) call ConjugateGradient(ffp, avs, mcx, rxp, avs%atype, avs%pos, cla, mpt, rxp%ftol)
 
 call QEq(ffp, avs, qvt, mpt, rxp, mcx)
 call FORCE(ffp, mpt, bos, avs, qvt, mcx)
