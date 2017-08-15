@@ -1,6 +1,6 @@
 !----------------------------------------------------------------------------------------------------------------------
 subroutine FORCE(atype, pos, f, q)
-use parameters; use atoms 
+use parameters; use atoms
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -43,16 +43,29 @@ do i=1, NBUFFER
    gtype(i)=l2g(atype(i))
 enddo
 
+
 !!$omp parallel default(shared)
 CALL BOCALC(NMINCELL, atype, pos)
 !!$omp end parallel
+
 !$omp parallel default(shared)
+f_private(:,:) = 0.d0
+
 CALL ENbond()
 CALL Ebond()
 CALL Elnpr()
 CALL Ehb()
 CALL E3b()
 CALL E4b()
+
+do i = 1, NBUFFER
+  !$omp atomic
+  f(1,i) = f(1,i) + f_private(1,i)
+  !$omp atomic
+  f(2,i) = f(2,i) + f_private(2,i)
+  !$omp atomic
+  f(3,i) = f(3,i) + f_private(3,i)
+enddo
 !$omp end parallel 
 
 CALL ForceBondedTerms(NMINCELL)
@@ -610,18 +623,13 @@ do i=1, NATOMS
    
                   ff(1:3) = CEhb(3)*rjk(1:3)
 
-!$omp atomic
-                  f(1,j) = f(1,j) - ff(1)
-!$omp atomic
-                  f(2,j) = f(2,j) - ff(2)
-!$omp atomic
-                  f(3,j) = f(3,j) - ff(3)
-!$omp atomic
-                  f(1,k) = f(1,k) + ff(1)
-!$omp atomic
-                  f(2,k) = f(2,k) + ff(2)
-!$omp atomic
-                  f(3,k) = f(3,k) + ff(3)
+                  f_private(1,j) = f_private(1,j) - ff(1)
+                  f_private(2,j) = f_private(2,j) - ff(2)
+                  f_private(3,j) = f_private(3,j) - ff(3)
+
+                  f_private(1,k) = f_private(1,k) + ff(1)
+                  f_private(2,k) = f_private(2,k) + ff(2)
+                  f_private(3,k) = f_private(3,k) + ff(3)
 
 !--- stress calculation
 #ifdef STRESS
@@ -686,7 +694,7 @@ do i=1, NATOMS
 
          jid = gtype(j)
 
-!         if(jid<iid) then
+         if(jid<iid) then
 
             dr(1:3) = pos(1:3,i) - pos(1:3,j)
             dr2 = sum(dr(1:3)*dr(1:3))
@@ -716,23 +724,18 @@ do i=1, NATOMS
                CEclmb = drtb1*TBL_Eclmb(1,itb,inxn) + drtb*TBL_Eclmb(1,itb1,inxn)
                CEclmb = CEclmb*qij
 
-               PE(11) = PE(11) + 0.5*PEvdw
-               PE(12) = PE(12) + 0.5*PEclmb
+               PE(11) = PE(11) + PEvdw
+               PE(12) = PE(12) + PEclmb
 
                ff(1:3) = (CEvdw+CEclmb)*dr(1:3)
     
-!!$omp atomic
-               f(1,i) = f(1,i) - ff(1)
-!!$omp atomic
-               f(2,i) = f(2,i) - ff(2)
-!!$omp atomic
-               f(3,i) = f(3,i) - ff(3)
-!!$omp atomic
-!               f(1,j) = f(1,j) + ff(1)
-!!$omp atomic
-!               f(2,j) = f(2,j) + ff(2)
-!!$omp atomic
-!               f(3,j) = f(3,j) + ff(3)
+               f_private(1,i) = f_private(1,i) - ff(1)
+               f_private(2,i) = f_private(2,i) - ff(2)
+               f_private(3,i) = f_private(3,i) - ff(3)
+
+               f_private(1,j) = f_private(1,j) + ff(1)
+               f_private(2,j) = f_private(2,j) + ff(2)
+               f_private(3,j) = f_private(3,j) + ff(3)
 
 !--- stress calculation
 #ifdef STRESS
@@ -741,7 +744,7 @@ do i=1, NATOMS
 #endif
 
             endif
-!         endif
+         endif
 
     enddo  !do j1 = 1, nbplist(i,0) 
 enddo
@@ -1073,19 +1076,13 @@ do j1=1, nbrlist(i,0)
   dr(1:3) = pos(1:3,i)-pos(1:3,j)
   ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
 
-!$omp atomic
-  f(1,i) = f(1,i) - ff(1)
-!$omp atomic
-  f(2,i) = f(2,i) - ff(2)
-!$omp atomic
-  f(3,i) = f(3,i) - ff(3)
-
-!$omp atomic
-  f(1,j) = f(1,j) + ff(1)
-!$omp atomic
-  f(2,j) = f(2,j) + ff(2)
-!$omp atomic
-  f(3,j) = f(3,j) + ff(3)
+  f_private(1,i) = f_private(1,i) - ff(1)
+  f_private(2,i) = f_private(2,i) - ff(2)
+  f_private(3,i) = f_private(3,i) - ff(3)
+  
+  f_private(1,j) = f_private(1,j) + ff(1)
+  f_private(2,j) = f_private(2,j) + ff(2)
+  f_private(3,j) = f_private(3,j) + ff(3)
 
 #ifdef STRESS
   ia=i; ja=j
@@ -1122,19 +1119,14 @@ Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
 
 dr(1:3) = pos(1:3,i) - pos(1:3,j)
 ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
-!$omp atomic
-f(1,i) = f(1,i) - ff(1)
-!$omp atomic
-f(2,i) = f(2,i) - ff(2)
-!$omp atomic
-f(3,i) = f(3,i) - ff(3)
 
-!$omp atomic
-f(1,j) = f(1,j) + ff(1)
-!$omp atomic
-f(2,j) = f(2,j) + ff(2)
-!$omp atomic
-f(3,j) = f(3,j) + ff(3)
+f_private(1,i) = f_private(1,i) - ff(1)
+f_private(2,i) = f_private(2,i) - ff(2)
+f_private(3,i) = f_private(3,i) - ff(3)
+
+f_private(1,j) = f_private(1,j) + ff(1)
+f_private(2,j) = f_private(2,j) + ff(2)
+f_private(3,j) = f_private(3,j) + ff(3)
 
 #ifdef STRESS
 ia=i; ja=j
@@ -1175,18 +1167,13 @@ Cbond(1) = cf(1)*(A0(i,j1) + BO(0,i,j1)*A1(i,j1))*dBOp(i,j1)        & !full BO
 dr(1:3) = pos(1:3,i)-pos(1:3,j)
 ff(1:3) = Cbond(1)*dr(1:3)
 
-!$omp atomic
-f(1,i) = f(1,i) - ff(1)
-!$omp atomic
-f(2,i) = f(2,i) - ff(2)
-!$omp atomic
-f(3,i) = f(3,i) - ff(3)
-!$omp atomic
-f(1,j) = f(1,j) + ff(1)
-!$omp atomic
-f(2,j) = f(2,j) + ff(2)
-!$omp atomic
-f(3,j) = f(3,j) + ff(3)
+f_private(1,i) = f_private(1,i) - ff(1)
+f_private(2,i) = f_private(2,i) - ff(2)
+f_private(3,i) = f_private(3,i) - ff(3)
+
+f_private(1,j) = f_private(1,j) + ff(1)
+f_private(2,j) = f_private(2,j) + ff(2)
+f_private(3,j) = f_private(3,j) + ff(3)
 
 #ifdef STRESS
 ia=i; ja=j
@@ -1267,33 +1254,21 @@ fkl(1:3) =-coDD*( Cwl(1)*rij(1:3) + Cwl(2)*rjk(1:3) + Cwl(3)*rkl(1:3) )
 fijjk(1:3)= -fij(1:3) + fjk(1:3)
 fjkkl(1:3)= -fjk(1:3) + fkl(1:3)
 
-!$omp atomic
-f(1,i) = f(1,i) + fij(1) 
-!$omp atomic
-f(2,i) = f(2,i) + fij(2) 
-!$omp atomic
-f(3,i) = f(3,i) + fij(3) 
+f_private(1,i) = f_private(1,i) + fij(1) 
+f_private(2,i) = f_private(2,i) + fij(2) 
+f_private(3,i) = f_private(3,i) + fij(3) 
 
-!$omp atomic
-f(1,j) = f(1,j) + fijjk(1)
-!$omp atomic
-f(2,j) = f(2,j) + fijjk(2)
-!$omp atomic
-f(3,j) = f(3,j) + fijjk(3)
+f_private(1,j) = f_private(1,j) + fijjk(1)
+f_private(2,j) = f_private(2,j) + fijjk(2)
+f_private(3,j) = f_private(3,j) + fijjk(3)
 
-!$omp atomic
-f(1,k) = f(1,k) + fjkkl(1)
-!$omp atomic
-f(2,k) = f(2,k) + fjkkl(2)
-!$omp atomic
-f(3,k) = f(3,k) + fjkkl(3)
+f_private(1,k) = f_private(1,k) + fjkkl(1)
+f_private(2,k) = f_private(2,k) + fjkkl(2)
+f_private(3,k) = f_private(3,k) + fjkkl(3)
 
-!$omp atomic
-f(1,l) = f(1,l) - fkl(1)
-!$omp atomic
-f(2,l) = f(2,l) - fkl(2)
-!$omp atomic
-f(3,l) = f(3,l) - fkl(3)
+f_private(1,l) = f_private(1,l) - fkl(1)
+f_private(2,l) = f_private(2,l) - fkl(2)
+f_private(3,l) = f_private(3,l) - fkl(3)
 
 !--- stress calculation
 #ifdef STRESS
@@ -1346,26 +1321,17 @@ fij(1:3) = coCC*(Ci(1)*rij(1:3) + Ci(2)*rjk(1:3))
 fjk(1:3) =-coCC*(Ck(1)*rij(1:3) + Ck(2)*rjk(1:3))
 fijjk(1:3) =  -fij(1:3) + fjk(1:3) 
 
-!$omp atomic
-f(1,i) = f(1,i) + fij(1)
-!$omp atomic
-f(2,i) = f(2,i) + fij(2)
-!$omp atomic
-f(3,i) = f(3,i) + fij(3)
+f_private(1,i) = f_private(1,i) + fij(1)
+f_private(2,i) = f_private(2,i) + fij(2)
+f_private(3,i) = f_private(3,i) + fij(3)
 
-!$omp atomic
-f(1,j) = f(1,j) + fijjk(1)
-!$omp atomic
-f(2,j) = f(2,j) + fijjk(2)
-!$omp atomic
-f(3,j) = f(3,j) + fijjk(3)
+f_private(1,j) = f_private(1,j) + fijjk(1)
+f_private(2,j) = f_private(2,j) + fijjk(2)
+f_private(3,j) = f_private(3,j) + fijjk(3)
 
-!$omp atomic
-f(1,k) = f(1,k) - fjk(1)
-!$omp atomic
-f(2,k) = f(2,k) - fjk(2)
-!$omp atomic
-f(3,k) = f(3,k) - fjk(3)
+f_private(1,k) = f_private(1,k) - fjk(1)
+f_private(2,k) = f_private(2,k) - fjk(2)
+f_private(3,k) = f_private(3,k) - fjk(3)
 
 #ifdef STRESS
 ia=i; ja=j; dr(1:3)=rij(1:3); ff(1:3)=-fij(1:3)

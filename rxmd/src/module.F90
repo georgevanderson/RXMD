@@ -40,6 +40,10 @@ real(8) :: lata,latb,latc,lalpha,lbeta,lgamma
 
 integer :: myid, nprocs, ierr, myparity(3), vID(3)
 
+!--- thread private force array 
+real(8),allocatable,dimension(:,:) :: f_private 
+!$omp threadprivate(f_private)
+
 !<sbuffer> send buffer, <rbuffer> receive buffer
 real(8),allocatable :: sbuffer(:), rbuffer(:)
    
@@ -94,7 +98,7 @@ integer,parameter :: is_idEh = 1
 !integer :: NBUFFER=5000
 !integer,parameter :: MAXNEIGHBS=50  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 !integer,parameter :: MAXNEIGHBS10=200 !<MAXNEIGHBS>: Max # of Ngbs within 10[A]. 
-integer,external :: omp_get_max_threads
+
 integer :: NBUFFER=30000
 integer,parameter :: MAXNEIGHBS=30  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 integer,parameter :: MAXNEIGHBS10=700 !<MAXNEIGHBS>: Max # of Ngbs within 10[A]. 
@@ -450,6 +454,7 @@ subroutine AllocatorD2D(array, imin1, imax1, imin2, imax2)
   integer :: status
   
   allocate(array(imin1:imax1,imin2:imax2), stat=status)
+  !$omp atomic
   totalMemory = totalMemory + size(array)*8
 
   if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD2D: totalMemory = ', totalMemory, status
