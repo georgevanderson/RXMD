@@ -816,14 +816,14 @@ subroutine E4b()
 use atoms; use parameters
 !--------------------------------------------------------------------------------------------------------------
 implicit none
-integer :: i,j,k,l, i1,j1,k1,l1, k2, ity,jty,kty,lty, inxn
+integer :: i,j,k,l, i1,j1,k1,l1,l2(MAXNEIGHBS), k2, ity,jty,kty,lty, inxn
 
 !--- angles
 real(8) :: cos_ijkl(3), cos_ijkl_sqr, cos_2ijkl, sin_ijkl, sin_ijk, sin_jkl, tan_ijk_i, tan_jkl_i
 real(8) :: cos_ijk, cos_jkl, theta_ijk, theta_jkl, omega_ijkl
 
 !--- vectors
-real(8) :: rij(0:3), rjk(0:3), rkl(0:3)
+real(8) :: rij(0:3), rjk(0:3), rkl(0:3), rkl2(MAXNEIGHBS,0:3)
 real(8) :: crs_ijk(0:3), crs_jkl(0:3)
 
 real(8) :: delta_ang_jk, delta_ang_j, delta_ang_k
@@ -831,7 +831,7 @@ real(8) :: exp_tor1, exp_tor3, exp_tor4, exp_tor34_i, fn10, fn11, dfn11, fn12, P
 real(8) :: exp_tor2(3)
 
 !--- coefficients
-real(8) :: CEtors(9), Cconj, CEconj(6), C4body_a(3), C4body_b(3), C4body_b_jk(3)
+real(8) :: CEtors(9), Cconj, CEconj(6), C4body_a(3), C4body_a3(MAXNEIGHBS), C4body_b(3), C4body_b_jk(3)
 
 real(8) :: btb2 !! 
 real(8) :: BOij, BOjk, BOkl
@@ -839,6 +839,7 @@ real(8) :: BOij, BOjk, BOkl
 integer :: jid,kid
 
 integer :: ti,tj,tk
+integer :: cnt
 
 !$omp master
 call system_clock(ti,tk)
@@ -898,6 +899,7 @@ do j=1,NATOMS
 
               call cross_product(rij, rjk, crs_ijk)
 
+              cnt = 0
               do l1=1, nbrlist(k,0)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
@@ -915,8 +917,14 @@ do j=1,NATOMS
 !--- NOTICE: cutoff condition to ignore bonding.
                  if( (BO(0,j,i1)*(BO(0,j,k1)**2)*BO(0,k,l1)) > MINBO0) then
 
+                 cnt = cnt + 1
+                 l2(cnt) = nbrlist(k,l1)
+                 !print *, 'l2(l1) is:  ', l2(l1)
+
                  rkl(1:3) = pos(1:3,k) - pos(1:3,l)
                  rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
+                 rkl2(cnt,1:3) = pos(1:3,k) - pos(1:3,l)
+                 rkl2(cnt,0) = sqrt( sum(rkl2(cnt,1:3)*rkl2(cnt,1:3)) )
 
                  exp_tor2(1) = exp(-ptor2(inxn)*BOij)  ! i-j
                  exp_tor2(2) = exp(-ptor2(inxn)*BOjk)  ! j-k
@@ -939,7 +947,8 @@ do j=1,NATOMS
 
 
 !--- Get angle variables i-j-k, j-k-l, i-j-k-l
-                 cos_jkl =-sum(rjk(1:3)*rkl(1:3))/(rjk(0)*rkl(0))
+                 !cos_jkl =-sum(rjk(1:3)*rkl(1:3))/(rjk(0)*rkl(0))
+                 cos_jkl =-sum(rjk(1:3)*rkl2(cnt,1:3))/(rjk(0)*rkl2(cnt,0))
                  if(cos_jkl>MAXANGLE) cos_jkl = MAXANGLE
                  if(cos_jkl<MINANGLE) cos_jkl = MINANGLE
 
@@ -947,7 +956,8 @@ do j=1,NATOMS
                  sin_jkl = sin(theta_jkl)
                  tan_jkl_i = 1.d0/tan(theta_jkl)
 
-                 call cross_product(rjk, rkl, crs_jkl)
+                 !call cross_product(rjk, rkl, crs_jkl)
+                 call cross_product(rjk, rkl2(cnt,:), crs_jkl)
 
                  cos_ijkl(1) = sum( crs_ijk(1:3)*crs_jkl(1:3) )/( crs_ijk(0)*crs_jkl(0) )
                  if(cos_ijkl(1)>MAXANGLE) cos_ijkl(1) = MAXANGLE
@@ -1009,6 +1019,7 @@ do j=1,NATOMS
 
                  C4body_b(1:3) = CEconj(1:3) + CEtors(4:6) !dBOij, dBOjk, dBOkl
                  C4body_a(1:3) = CEconj(4:6) + CEtors(7:9) !ijk, jkl, ijkl
+                 C4body_a3(cnt) = CEconj(6) + CEtors(9)
 
                  call ForceD(j, CEtors(3))
                  call ForceD(k, CEtors(3))
@@ -1029,13 +1040,18 @@ do j=1,NATOMS
 
                  call ForceA3(C4body_a(1), i,j,k, rij,rjk)
                  call ForceA3(C4body_a(2), j,k,l, rjk,rkl)
-                 call ForceA4(C4body_a(3), i,j,k,l, rij,rjk,rkl)
+                 !call ForceA3(C4body_a(2), j,k,l, rjk,rkl2(l1,:))
+                 
+                 !call ForceA4(C4body_a(3), i,j,k,l, rij,rjk,rkl)
 
                  endif ! if( (BO(0,j,i1)*BO(0,j,k1)**2*BO(0,k,l1)) >MINBO0)
                  endif ! if ((inxn/=0).and.(i/=l).and.(j/=l))
                  endif ! if(BOkl>MINBO0)
 
                enddo ! l-loop
+
+               !print *, 'l2 is:   ', l2(1:cnt)
+               call ForceA4(C4body_a3(1:cnt), i,j,k,l2(1:cnt), rij,rjk,rkl2(1:cnt,:), cnt)
 
                endif ! if (i/=k) 
             endif ! if(BOij>MINBO0)
@@ -1196,7 +1212,7 @@ end subroutine
 
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2)
+subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2, len)
 use atoms
 ! derivative of <cos_ijkl>
 !-----------------------------------------------------------------------------------------
@@ -1207,68 +1223,74 @@ implicit none
 ! Caa(-2,0)=Ca-2a, Caa(-2,-1)=Ca-2a-1, Caa(-2,-2)=Ca-2a-2
 ! da0 = ri - rj,  da1 = rj - rk,  da2 = rk - rl
 
-integer,INTENT(IN) :: i,j,k,l
-real(8),INTENT(IN) :: coeff, da0(0:3), da1(0:3), da2(0:3)
-real(8) :: Daa(-1:0), Caa(-2:0,-2:0),Cwi(3), Cwj(3), Cwl(3)
-real(8) :: DDisqr, coDD, com
-real(8) :: fij(3), fjk(3), fkl(3), fijjk(3), fjkkl(3)
-real(8) :: rij(3), rjk(3), rkl(3)
+integer,INTENT(IN) :: len
+integer,INTENT(IN) :: i,j,k,l(len)
+real(8),INTENT(IN) :: coeff(len), da0(0:3), da1(0:3), da2(len,0:3)
+real(8) :: Daa(len,-1:0), Caa(len,-2:0,-2:0),Cwi(len,3), Cwj(len,3), Cwl(len,3)
+real(8) :: DDisqr(len), coDD(len), com(len)
+real(8) :: fij(3), fjk(3), fkl(len,3), fijjk(3), fjkkl(3)
+real(8) :: rij(3), rjk(3), rkl(len,3)
+integer :: ll
 
-Caa( 0,0)=da0(0)*da0(0);Caa( 0,-1)=sum(da0(1:3)*da1(1:3));Caa( 0,-2)=sum(da0(1:3)*da2(1:3))
-Caa(-1,0)=Caa(0,-1);    Caa(-1,-1)=da1(0)*da1(0);         Caa(-1,-2)=sum(da1(1:3)*da2(1:3))
-Caa(-2,0)=Caa(0,-2);    Caa(-2,-1)=Caa(-1,-2);            Caa(-2,-2)=da2(0)*da2(0)
+Caa(:,0,0)=da0(0)*da0(0); Caa(:,0,-1)=sum(da0(1:3)*da1(1:3)); Caa(:,0,-2)=matmul(da2(:,1:3),da0(1:3))
+Caa(:,-1,0)=Caa(:,0,-1);  Caa(:,-1,-1)=da1(0)*da1(0);         Caa(:,-1,-2)=matmul(da2(:,1:3),da1(1:3))
+Caa(:,-2,0)=Caa(:,0,-2);  Caa(:,-2,-1)=Caa(:,-1,-2);          Caa(:,-2,-2)=da2(:,0)*da2(:,0)
 
-Daa( 0) = Caa( 0, 0)*Caa(-1,-1) - Caa( 0,-1)*Caa( 0,-1)
-Daa(-1) = Caa(-1,-1)*Caa(-2,-2) - Caa(-1,-2)*Caa(-1,-2)
+Daa(:,0) = Caa(:,0, 0)*Caa(:,-1,-1) - Caa(:,0,-1)*Caa(:,0,-1)
+Daa(:,-1) = Caa(:,-1,-1)*Caa(:,-2,-2) - Caa(:,-1,-2)*Caa(:,-1,-2)
 
-DDisqr = 1.d0/sqrt( Daa(0)*Daa(-1) )
+DDisqr = 1.d0/sqrt( Daa(:,0)*Daa(:,-1) )
 coDD = coeff*DDisqr
 
-com = Caa(-1, 0)*Caa(-1,-2) - Caa(0,-2)*Caa(-1,-1)
+
+com = Caa(:,-1, 0)*Caa(:,-1,-2) - Caa(:,0,-2)*Caa(:,-1,-1)
 
 !--- Some of calculations are unnecessary due to the action-reaction relation.
-Cwi(1) = Caa(-1,-1)  / Daa(0)*com
-Cwi(2) =-(Caa(-1,-2) + Caa(0,-1)/Daa(0)*com)
-Cwi(3) = Caa(-1,-1)
+Cwi(:,1) = Caa(:,-1,-1)  / Daa(:,0)*com
+Cwi(:,2) =-(Caa(:,-1,-2) + Caa(:,0,-1)/Daa(:,0)*com)
+Cwi(:,3) = Caa(:,-1,-1)
 
-Cwj(1) =-( Caa(-1,-2) + (Caa(-1,-1) + Caa(-1,0))/Daa(0)*com )
-Cwj(2) =-(-Caa(-1,-2) - 2*Caa(0,-2) - Caa(-2,-2)/Daa(-1)*com - (Caa(0,0)+Caa(-1,0))/Daa(0)*com )
-Cwj(3) =-( Caa(-1, 0) + Caa(-1,-1)  + Caa(-1,-2)/Daa(-1)*com )
+Cwj(:,1) =-( Caa(:,-1,-2) + (Caa(:,-1,-1) + Caa(:,-1,0))/Daa(:,0)*com )
+Cwj(:,2) =-(-Caa(:,-1,-2) - 2*Caa(:,0,-2) - Caa(:,-2,-2)/Daa(:,-1)*com - (Caa(:,0,0)+Caa(:,-1,0))/Daa(:,0)*com )
+Cwj(:,3) =-( Caa(:,-1, 0) + Caa(:,-1,-1)  + Caa(:,-1,-2)/Daa(:,-1)*com )
 
 !Cwk(1) = ( Caa(-2,-1) + Caa(-1,-1)  + Caa(-1,0)/Daa(0)*com )
 !Cwk(2) =-( Caa(-1, 0) + 2*Caa(-2,0) + (Caa(-2,-2) + Caa(-2,-1))/Daa(-1)*com + Caa(0,0)/Daa(0)*com )
 !Cwk(3) = ( Caa(-1, 0) + (Caa(-1,-1) + Caa(-2,-1))/Daa(-1)*com )
 
-Cwl(1) =-Caa(-1,-1)
-Cwl(2) = ( Caa(-1,0)  + Caa(-2,-1)/Daa(-1)*com )
-Cwl(3) =-( Caa(-1,-1) / Daa(-1)*com )
+Cwl(:,1) =-Caa(:,-1,-1)
+Cwl(:,2) = ( Caa(:,-1,0)  + Caa(:,-2,-1)/Daa(:,-1)*com )
+Cwl(:,3) =-( Caa(:,-1,-1) / Daa(:,-1)*com )
 
 rij(1:3) = da0(1:3)
 rjk(1:3) = da1(1:3)
-rkl(1:3) = da2(1:3)
+rkl(:,1:3) = da2(:,1:3)
 
-fij(1:3) = coDD*( Cwi(1)*rij(1:3) + Cwi(2)*rjk(1:3) + Cwi(3)*rkl(1:3) )
-fjk(1:3) = coDD*( (Cwj(1)+Cwi(1))*rij(1:3) + (Cwj(2)+Cwi(2))*rjk(1:3) + (Cwj(3)+Cwi(3))*rkl(1:3) )
-fkl(1:3) =-coDD*( Cwl(1)*rij(1:3) + Cwl(2)*rjk(1:3) + Cwl(3)*rkl(1:3) ) 
+fij(1) = sum(coDD*( Cwi(:,1)*rij(1) + Cwi(:,2)*rjk(1) + Cwi(:,3)*rkl(:,1) ))
+fij(2) = sum(coDD*( Cwi(:,1)*rij(2) + Cwi(:,2)*rjk(2) + Cwi(:,3)*rkl(:,2) ))
+fij(3) = sum(coDD*( Cwi(:,1)*rij(3) + Cwi(:,2)*rjk(3) + Cwi(:,3)*rkl(:,3) ))
+
+fjk(1) = sum(coDD*( (Cwj(:,1)+Cwi(:,1))*rij(1) + (Cwj(:,2)+Cwi(:,2))*rjk(1) + (Cwj(:,3)+Cwi(:,3))*rkl(:,1) ))
+fjk(2) = sum(coDD*( (Cwj(:,1)+Cwi(:,1))*rij(2) + (Cwj(:,2)+Cwi(:,2))*rjk(2) + (Cwj(:,3)+Cwi(:,3))*rkl(:,2) ))
+fjk(3) = sum(coDD*( (Cwj(:,1)+Cwi(:,1))*rij(3) + (Cwj(:,2)+Cwi(:,2))*rjk(3) + (Cwj(:,3)+Cwi(:,3))*rkl(:,3) ))
+
+fkl(:,1) = -coDD*( Cwl(:,1)*rij(1) + Cwl(:,2)*rjk(1) + Cwl(:,3)*rkl(:,1) )
+fkl(:,2) = -coDD*( Cwl(:,1)*rij(2) + Cwl(:,2)*rjk(2) + Cwl(:,3)*rkl(:,2) )
+fkl(:,3) = -coDD*( Cwl(:,1)*rij(3) + Cwl(:,2)*rjk(3) + Cwl(:,3)*rkl(:,3) )
 
 fijjk(1:3)= -fij(1:3) + fjk(1:3)
-fjkkl(1:3)= -fjk(1:3) + fkl(1:3)
+fjkkl(1:3)= -fjk(1:3) + sum(fkl(:,1:3), DIM=1)
 
-f_private(1,i) = f_private(1,i) + fij(1) 
-f_private(2,i) = f_private(2,i) + fij(2) 
-f_private(3,i) = f_private(3,i) + fij(3) 
+f_private(1:3,i) = f_private(1:3,i) + fij(1:3)
 
-f_private(1,j) = f_private(1,j) + fijjk(1)
-f_private(2,j) = f_private(2,j) + fijjk(2)
-f_private(3,j) = f_private(3,j) + fijjk(3)
+f_private(1:3,j) = f_private(1:3,j) + fijjk(1:3)
 
-f_private(1,k) = f_private(1,k) + fjkkl(1)
-f_private(2,k) = f_private(2,k) + fjkkl(2)
-f_private(3,k) = f_private(3,k) + fjkkl(3)
+f_private(1:3,k) = f_private(1:3,k) + fjkkl(1:3)
 
-f_private(1,l) = f_private(1,l) - fkl(1)
-f_private(2,l) = f_private(2,l) - fkl(2)
-f_private(3,l) = f_private(3,l) - fkl(3)
+!print *, 'l is:  ', l
+do ll = 1, len
+  f_private(1:3,l(ll)) = f_private(1:3,l(ll)) - fkl(ll,1:3)
+enddo
 
 !--- stress calculation
 #ifdef STRESS
@@ -1276,7 +1298,7 @@ ia=i; ja=j; dr(1:3)=rij(1:3); ff(1:3)=-fij(1:3)
 include 'stress'
 ia=j; ja=k; dr(1:3)=rjk(1:3); ff(1:3)=-fjk(1:3)
 include 'stress'
-ia=k; ja=l; dr(1:3)=rkl(1:3); ff(1:3)=-fkl(1:3)
+!ia=k; ja=l; dr(1:3)=rkl(1:3); ff(1:3)=-fkl(1:3)
 include 'stress'
 #endif
 
