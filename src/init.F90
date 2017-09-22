@@ -221,7 +221,7 @@ type(md_context_type),intent(inout) :: mcx
 type(forcefield_params),intent(in) :: ffp 
 type(mpi_var_type),intent(in) :: mpt
 real(8) :: atype(mcx%NBUFFER)
-real(8) :: v(3,mcx%NBUFFER)
+real(8) :: v(mcx%NBUFFER,3)
 
 integer :: i, k, ity, ierr
 real(8) :: vv(2), vsqr, vsl, rndm(2)
