@@ -22,6 +22,12 @@ Interface
       real(8),allocatable,dimension(:) :: atype,q
       real(8),allocatable,dimension(:,:) :: pos,v,f
    end subroutine
+
+   subroutine ReadMoS2(atype, pos, v, q, f, fileName)
+      character(*),intent(in) :: fileName
+      real(8),allocatable,dimension(:) :: atype,q
+      real(8),allocatable,dimension(:,:) :: pos,v,f
+   end subroutine
 end interface
 
 !--- read FF file, output dir, MD parameter file paths from command line
@@ -304,7 +310,7 @@ use parameters; use atoms
 implicit none
 
 real(8) :: atype(NBUFFER)
-real(8) :: v(3,NBUFFER)
+real(8) :: v(NBUFFER,3)
 
 integer :: i, k, ity
 real(8) :: vv(2), vsqr, vsl, rndm(2)
