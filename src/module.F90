@@ -423,7 +423,7 @@ end module parameters
 module MemoryAllocator
 !-------------------------------------------------------------------------------------------
 implicit none
-integer :: totalMemory=0
+integer(8) :: totalMemory=0
 
 contains 
 
@@ -583,7 +583,7 @@ subroutine DeallocatorI3D(array)
   return
 end subroutine 
 
-integer function GetTotalMemory() 
+integer(8) function GetTotalMemory() 
   GetTotalMemory = totalMemory
   return
 end function

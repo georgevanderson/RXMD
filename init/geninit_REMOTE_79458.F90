@@ -1,12 +1,7 @@
 module params
 implicit none
-<<<<<<< HEAD:init/geninit.F90
-integer :: vprocs(3)=(/2,2,1/)
-integer :: mc(3)=(/2,2,2/)
-=======
 integer :: vprocs(3)=(/1,1,1/)
 integer :: mc(3)=(/2,3,1/)
->>>>>>> master:init/geninit.F90
 
 integer :: nprocs, mctot
 integer,allocatable :: lnatoms(:), lnatoms1(:), lnatoms2(:)
@@ -34,17 +29,10 @@ contains
 subroutine getAtomNames(fileName)
 implicit none
 !----------------------------------------------------------------
-integer :: i, stat
-logical :: isLG
+integer :: i
 character(256) :: fileName
 
-open(20,file=fileName, iostat=stat, action='read')
-if (stat/=0) then
-        print *, "LG forcefield identified"
-        open(20,file=trim(fileName)//"_lg",  action='read')
-        isLG=.true.
-endif 
-
+open(20,file=fileName)
 read(20,*)
 read(20,*) numParams
 do i=1, numParams
@@ -54,26 +42,14 @@ read(20,*) numAtomNames
 read(20,*)
 read(20,*)
 read(20,*)
-
 allocate( character(3) :: atomNames(numAtomNames) )
-if (isLG) then 
-   do i=1, numAtomNames
-        read(20,*) atomNames(i)
-        read(20,*)
-        read(20,*)
-        read(20,*)
-        read(20,*)
-        print'(i3,a,a2 $)',i,'-',atomNames(i)
-   enddo
-else 
-   do i=1, numAtomNames
-        read(20,*) atomNames(i)
-        read(20,*)
-        read(20,*)
-        read(20,*)
-        print'(i3,a,a2 $)',i,'-',atomNames(i)
-   enddo
-endif 
+do i=1, numAtomNames
+   read(20,*) atomNames(i)
+   read(20,*)
+   read(20,*)
+   read(20,*)
+   print'(i3,a,a2 $)',i,'-',atomNames(i)
+enddo
 close(20)
 print*
 

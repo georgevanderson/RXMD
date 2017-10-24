@@ -1,12 +1,7 @@
 module params
 implicit none
-<<<<<<< HEAD:init/geninit.F90
 integer :: vprocs(3)=(/2,2,1/)
 integer :: mc(3)=(/2,2,2/)
-=======
-integer :: vprocs(3)=(/1,1,1/)
-integer :: mc(3)=(/2,3,1/)
->>>>>>> master:init/geninit.F90
 
 integer :: nprocs, mctot
 integer,allocatable :: lnatoms(:), lnatoms1(:), lnatoms2(:)
@@ -25,7 +20,7 @@ character(256) :: ffieldFileName="../ffield"
 
 character(256) :: fnote
 
-character(len=3),allocatable :: atomNames(:)
+character(len=:),allocatable :: atomNames(:)
 integer :: numParams, numAtomNames
 
 contains

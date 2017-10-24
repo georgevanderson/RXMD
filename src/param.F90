@@ -121,6 +121,11 @@ do i1=1, nso  !collect info on each type of atom
    endif
 enddo
 
+!--- update for Mo
+do i1=1,nso
+   if(mass(i1)<21.d0 .and. Valboc(i1)/=Valval(i1) ) Valboc(i1)=Valval(i1)
+enddo
+
 nlpopt(1:nso) = 0.5d0*(Vale(1:nso) - Val(1:nso))
 !--- duplicate values
 Valangle(1:nso) = Valboc(1:nso)
@@ -274,9 +279,6 @@ do i=1, nvaty
    inxn3(i1,i2,i3) = i
    inxn3(i3,i2,i1) = i
 enddo
-
-inxn3(1,2,2)=0 !react.f, line 4933
-inxn3(2,2,1)=0 !react.f, line 4933
 
 !--- Valency Terms which do not depend on inxn type:
 pval6(1:nvaty) = vpar(15)
