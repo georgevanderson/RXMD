@@ -1,12 +1,7 @@
 module params
 implicit none
-<<<<<<< HEAD:init/geninit.F90
-integer :: vprocs(3)=(/2,2,1/)
-integer :: mc(3)=(/2,2,2/)
-=======
 integer :: vprocs(3)=(/1,1,1/)
-integer :: mc(3)=(/2,3,1/)
->>>>>>> master:init/geninit.F90
+integer :: mc(3)=(/1,1,1/)
 
 integer :: nprocs, mctot
 integer,allocatable :: lnatoms(:), lnatoms1(:), lnatoms2(:)
@@ -38,10 +33,10 @@ integer :: i, stat
 logical :: isLG
 character(256) :: fileName
 
-open(20,file=fileName, iostat=stat, action='read')
+open(20,file=fileName, iostat=stat, action='read', status='old')
 if (stat/=0) then
         print *, "LG forcefield identified"
-        open(20,file=trim(fileName)//"_lg",  action='read')
+        open(20,file=trim(fileName)//"_lg",  action='read', status='old')
         isLG=.true.
 endif 
 
@@ -149,6 +144,7 @@ implicit none
 !================================================================
 integer :: i, j, k, n, ia, myid, sID
 integer(8) :: ii=0
+logical :: isDirect, isreal
 character(6) :: a6
 character(64) :: argv
 
@@ -193,6 +189,8 @@ call getAtomNames(ffieldFileName)
 read(1,*) natoms, fnote
 print'(i9,3x,a)',natoms, trim(fnote)
 
+if (fnote == 'D' .or. fnote == 'd') isdirect=.true.
+if (fnote == 'R' .or. fnote == 'r') isreal=.true.
 !--- read lattice parameters
 read(1,*) L1, L2, L3, Lalpha, Lbeta, Lgamma
 !print'(a,3x,6f12.3)','1, L2, L3, Lalpha, Lbeta, Lgamma: ', & 
@@ -209,7 +207,7 @@ do i=1, natoms
 
    do j=1, numAtomNames
       if(ctype0(i)==atomNames(j)) then
-         !print*, ctype0(i), atomNames(j)
+!         print*, ctype0(i), atomNames(j)
          itype0(i)=j
          exit
       endif
@@ -225,10 +223,14 @@ do iy=0, mc(2)-1
 do iz=0, mc(3)-1
 do i=1, natoms
    ntot=ntot+1
-   !rr(1)=sum(Hi(1,1:3)*pos0(1:3,i))
-   !rr(2)=sum(Hi(2,1:3)*pos0(1:3,i))
-   !rr(3)=sum(Hi(3,1:3)*pos0(1:3,i))
+  if (isreal) then 
+   rr(1)=sum(Hi(1,1:3)*pos0(1:3,i))
+   rr(2)=sum(Hi(2,1:3)*pos0(1:3,i))
+   rr(3)=sum(Hi(3,1:3)*pos0(1:3,i))
+  endif 
+  if (isDirect) then
    rr(1:3)=pos0(1:3,i) !!! THIS IS FOR NORMALIZED COORD XYZ !!!
+  endif
    rr(1)=(rr(1)+ix)/mc(1)
    rr(2)=(rr(2)+iy)/mc(2)
    rr(3)=(rr(3)+iz)/mc(3)
@@ -240,10 +242,10 @@ enddo
 enddo; enddo; enddo
 
 !--- shift coordinates, then shift a bit to avoid zero coordinates
-do i=1, 3
-   rmin(i)=minval(pos1(i,:))
-   pos1(i,:)=pos1(i,:)-rmin(i)
-enddo
+!do i=1, 3
+!   rmin(i)=minval(pos1(i,:))
+!   pos1(i,:)=pos1(i,:)-rmin(i)
+!enddo
 
 !--- wrap back atom coordinates if necessary
 do i=1, ntot
