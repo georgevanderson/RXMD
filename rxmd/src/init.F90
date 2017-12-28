@@ -22,6 +22,17 @@ Interface
       real(8),allocatable,dimension(:) :: atype,q
       real(8),allocatable,dimension(:,:) :: pos,v,f
    end subroutine
+
+   subroutine ReadMoS2(atype, pos, v, q, f, fileName)
+      character(*),intent(in) :: fileName
+      real(8),allocatable,dimension(:) :: atype,q
+      real(8),allocatable,dimension(:,:) :: pos,v,f
+   end subroutine
+
+
+
+
+
 end interface
 
 !--- read FF file, output dir, MD parameter file paths from command line
@@ -139,7 +150,8 @@ call allocatord2d(f_private,1,3,1,NBUFFER)
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
+!call ReadBIN(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
+call ReadMoS2(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)

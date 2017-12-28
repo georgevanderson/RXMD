@@ -1,6 +1,6 @@
 !----------------------------------------------------------------------------------------------------------------------
 subroutine FORCE(atype, pos, f, q)
-use parameters; use atoms
+use parameters; use atoms!; USE ITTNOTIFY
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -44,6 +44,7 @@ do i=1, NBUFFER
 enddo
 
 
+!call ITT_RESUME()
 !!$omp parallel default(shared)
 CALL BOCALC(NMINCELL, atype, pos)
 !!$omp end parallel
@@ -67,6 +68,7 @@ do i = 1, NBUFFER
   f(3,i) = f(3,i) + f_private(3,i)
 enddo
 !$omp end parallel 
+!call ITT_PAUSE()
 
 CALL ForceBondedTerms(NMINCELL)
 CALL COPYATOMS(MODE_CPBK,[0.d0, 0.d0, 0.d0], atype, pos, vdummy, f, q) 
@@ -1050,8 +1052,11 @@ do j=1,NATOMS
 
                enddo ! l-loop
 
-               !print *, 'l2 is:   ', l2(1:cnt)
+               !print '(a10, i9)', 'l1 is:   ', l1
                call ForceA4(C4body_a3(1:cnt), i,j,k,l2(1:cnt), rij,rjk,rkl2(1:cnt,:), cnt)
+               !print '(a10, i9)', 'l1 is:   ', l1
+
+               !call ITT_PAUSE()
 
                endif ! if (i/=k) 
             endif ! if(BOij>MINBO0)

@@ -95,11 +95,11 @@ integer,parameter :: is_idEh = 1
 !real(8),parameter :: cutof2_bo = 1d-4
 !integer,parameter :: is_idEh = 0
 
-!integer :: NBUFFER=5000
+integer :: NBUFFER=3000000
 !integer,parameter :: MAXNEIGHBS=50  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 !integer,parameter :: MAXNEIGHBS10=200 !<MAXNEIGHBS>: Max # of Ngbs within 10[A]. 
 
-integer :: NBUFFER=30000
+!integer :: NBUFFER=15000000
 integer,parameter :: MAXNEIGHBS=30  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 integer,parameter :: MAXNEIGHBS10=700 !<MAXNEIGHBS>: Max # of Ngbs within 10[A]. 
 
@@ -417,7 +417,7 @@ end module parameters
 module MemoryAllocator
 !-------------------------------------------------------------------------------------------
 implicit none
-integer :: totalMemory=0
+integer(8) :: totalMemory=0
 
 contains 
 
@@ -454,7 +454,7 @@ subroutine AllocatorD2D(array, imin1, imax1, imin2, imax2)
   integer :: status
   
   allocate(array(imin1:imax1,imin2:imax2), stat=status)
-  !$omp atomic
+  !!$omp atomic
   totalMemory = totalMemory + size(array)*8
 
   if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD2D: totalMemory = ', totalMemory, status
