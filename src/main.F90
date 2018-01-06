@@ -1,6 +1,9 @@
 !------------------------------------------------------------------------------
 program rxmd
-use base; use atoms; use parameters; use CG
+use base
+use pqeq_vars
+use parameters
+use CG
 !------------------------------------------------------------------------------
 implicit none
 integer :: i,ity,it1,it2,irt,provided
@@ -14,7 +17,7 @@ call MPI_COMM_SIZE(MPI_COMM_WORLD, nprocs, ierr)
 if(myid==0)  print'(a30)', 'rxmd has started'
 
 !--- process command line arguments
-call get_cmdline_args(myid)
+call get_cmdline_args(myid, eFieldDir, eFieldStrength)
 
 !--- read ffield file
 CALL GETPARAMS(FFPath,FFDescript)
@@ -68,6 +71,11 @@ do nstep=0, ntime_step-1
    
    if(mod(nstep,qstep)==0) call PQEq(atype, pos, q)
    call FORCE(atype, pos, f, q)
+
+   if(mod(nstep,fstep)==0) then
+        call save_shell_positions(myid, current_step+nstep, NATOMS, NBUFFER, atype,pos,spos,q, &
+                                 lata,latb,latc,lalpha,lbeta,lgamma)
+   endif
 
    do i=1, NATOMS
       ity = nint(atype(i))
@@ -269,11 +277,11 @@ if(myid==0) then
    
    cstep = nstep + current_step 
 
-   write(6,'(i9,3es13.5,6es11.3,1x,3f8.2,i4,f8.2,f8.2)') cstep,GTE,GPE(0),GKE, &
+   write(6,'(a,i9,3es13.5,6es11.3,1x,3f8.2,i4,f8.2,f8.2)') 'energy : ',cstep,GTE,GPE(0),GKE, &
    GPE(1),sum(GPE(2:4)),sum(GPE(5:7)),sum(GPE(8:9)),GPE(10),sum(GPE(11:13)), &
-   tt, ss, qq, nstep_qeq, GetTotalMemory()*1e-9, MPI_WTIME()-wt0 
+   tt, ss, qq, nstep_qeq, GetTotalMemory()*1e-9, MPI_WTIME()-wt0
 
-   write(6,'(a,6f12.6)') 'astr(1:6) [GPa]: ',astr(1:6)
+   write(6,'(a,i9,6f12.6)') 'stress : ',cstep,astr(1:6)
 
 endif
 

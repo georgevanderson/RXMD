@@ -7,7 +7,6 @@ use parameters
 !use atoms
 use pqeq_vars
 use MemoryAllocator 
-use eField
 
 implicit none
 
@@ -42,6 +41,7 @@ CTap(0:7)=(/1.d0, 0.d0, 0.d0, 0.d0,   -35.d0/(rctap)**4, &
           20.d0/(rctap)**7 /)
 
 call initialize_pqeq(chi,eta)
+if(isEfield) call initialize_eField(myid)
 
 astr(:)=0.d0
 
@@ -284,7 +284,6 @@ if(myid==0) then
 
 endif
 
-if(isEfield) call initialize_eField(myid,HH(VolDir,VolDir,0))
 
 END SUBROUTINE
 

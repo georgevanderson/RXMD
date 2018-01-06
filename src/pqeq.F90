@@ -194,23 +194,23 @@ real(8) :: ff(3)
 
 real(8) :: dr(3)
 
+sforce(1:NATOMS,1:3)=0.d0
 do i=1, NATOMS
 
-   sforce(i,1:3)=0.d0
    ity = nint(atype(i))
 
    ! if i-atom is not polarizable, no force acting on i-shell. 
    if( .not. isPolarizable(ity) ) cycle 
 
-   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
+   if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
 
+   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
 
    do j1 = 1, nbplist(i,0)
 
       j = nbplist(i,j1)
       jty = nint(atype(j))
-
 
       qjc = q(j) + Zpqeq(jty)
       shellj(1:3) = pos(j,1:3) + spos(j,1:3)
@@ -240,9 +240,9 @@ enddo
 !--- update shell positions after finishing the shell-force calculation.  Eq. (39)
 do i=1, NATOMS
    ity = nint(atype(i))
-   dr(1:3)=sforce(i,1:3)/Kspqeq(ity)
    if( isPolarizable(ity) ) spos(i,1:3) = spos(i,1:3) + sforce(i,1:3)/Kspqeq(ity)
 enddo
+
 
 end subroutine
 
@@ -377,13 +377,7 @@ do i=1, NATOMS
 
    dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
 
-   if(isPolarizable(ity)) then
-      Eshell = 0.5d0*Kspqeq(ity)*dr2/CEchrge ! kcal/mol -> ev
-   else
-      Eshell = 0.d0
-   endif
-
-   Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i) + Eshell
+   Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
 
    do j1 = 1, nbplist(i,0)
       j = nbplist(i,j1)
@@ -430,9 +424,9 @@ end subroutine
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine get_gradient(Gnew)
+use atoms; use parameters
 ! Update gradient vector <g> and new residue <Gnew>
 !-----------------------------------------------------------------------------------------------------------------------
-use atoms; use parameters
 implicit none
 real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)

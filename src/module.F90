@@ -15,57 +15,6 @@ end Interface
 end module
 
 !-------------------------------------------------------------------------------------------
-module eField
-!-------------------------------------------------------------------------------------------
-
-real(8) :: Voltage=0.0,VolPhase=0.0
-integer :: VolDir=1
-
-contains
-
-!-------------------------------------------------------------------------------------------
-subroutine initialize_eField(myid, LatticeLength)
-implicit none
-!-------------------------------------------------------------------------------------------
-real(8),parameter :: pi=3.14159265358979d0
-integer,intent(in) :: myid
-real(8),intent(in) :: LatticeLength
-
-VolPhase = 2*pi/LatticeLength
-
-if(myid==0) then
-   print'(a)','-----------------------------------------------------------'
-   print'(a,f12.6,i6,f12.6)','Voltage [V], VolDir, VolPhase : ', Voltage, VolDir, VolPhase
-   print'(a)','-----------------------------------------------------------'
-endif
-
-return
-end subroutine
-
-!-------------------------------------------------------------------------------------------
-subroutine EEfield(Etotal,NATOMS,pos,q,f,Eev_kcal)
-implicit none 
-!-------------------------------------------------------------------------------------------
-integer,intent(in) :: NATOMS
-real(8),intent(in) :: pos(NATOMS,3),q(NATOMS),Eev_kcal
-integer :: i
-real(8) :: Etotal ,f(NATOMS,3), Eenergy, Eforce
-
-do i=1, NATOMS
-
-   Eenergy = q(i)*Voltage*sin(VolPhase*pos(i,VolDir))*Eev_kcal
-   Eforce = -q(i)*Voltage*VolPhase*cos(VolPhase*pos(i,VolDir))*Eev_kcal
-
-   Etotal = Etotal + Eenergy
-   f(i,VolDir)=f(i,VolDir)+Eforce
-enddo
-
-return
-end subroutine
-
-end module
-
-!-------------------------------------------------------------------------------------------
 module cmdline_args
 implicit none
 !-------------------------------------------------------------------------------------------
@@ -86,11 +35,12 @@ logical :: isEfield=.false.
 contains
 
 !-------------------------------------------------------------------------------------------
-subroutine get_cmdline_args(myrank)
-use Efield
+subroutine get_cmdline_args(myrank, eFieldDir, eFieldStrength)
 !-------------------------------------------------------------------------------------------
 implicit none
 integer,intent(in) :: myrank
+integer :: eFieldDir
+real(8) :: eFieldStrength 
 
 integer :: i
 character(64) :: argv
@@ -118,9 +68,9 @@ do i=1, command_argument_count()
        if(myrank==0) print'(a30)','Enabling electric field'
        isEfield=.true.
        call get_command_argument(i+1,argv)
-       read(argv,*) VolDir 
-       call get_command_argument(i+1,argv)
-       read(argv,*) Voltage
+       read(argv,*) eFieldDir
+       call get_command_argument(i+2,argv)
+       read(argv,*) eFieldStrength
      case("--profile")
        saveRunProfile=.true.
      case default
@@ -446,16 +396,99 @@ logical :: isPolarizable(ntype_pqeq) = (/.true.,.true.,.true.,.true.,.false.,.fa
 !logical :: isPolarizable(ntype_pqeq) = (/.false.,.false.,.false.,.false.,.false.,.false.,.false./)
 real(8) :: X0pqeq(ntype_pqeq) = (/4.224390d0, 3.114070d0, 7.834230d0, 5.049000d0, 0.d0, 0.d0, 0.d0/)
 real(8) :: J0pqeq(ntype_pqeq) = (/8.214880d0, 21.550060d0, 16.727930d0, 9.127260d0, 0.d0, 0.d0, 0.d0/)
+!real(8) :: X0pqeq(ntype_pqeq) = (/5.50813d0, 4.72484d0, 8.30811d0, 7.78778d0, 0.d0, 0.d0, 0.d0/)
+!real(8) :: J0pqeq(ntype_pqeq) = (/9.81186d0, 15.57338d0, 14.66128d0, 10.80315d0, 0.d0, 0.d0, 0.d0/)
+
 real(8) :: Zpqeq(ntype_pqeq) =  (/1.d0, 1.d0, 1.d0, 1.d0, 1.d0, 1.d0, 1.d0/)
 real(8) :: Rcpqeq(ntype_pqeq) = (/0.75900d0, 0.37100d0, 0.66900d0, 0.71500d0, 1.04700d0, 1.17600d0, 0.70600d0/)
 real(8) :: Rspqeq(ntype_pqeq) = (/0.75900d0, 0.37100d0, 0.66900d0, 0.71500d0, 1.04700d0, 1.17600d0, 0.70600d0/)
-real(8) :: Kspqeq(ntype_pqeq) = (/250d0, 2500d0, 500d0, 360d0, 0.d0, 0.d0, 0.d0 /)
+real(8) :: Kspqeq(ntype_pqeq) = (/250d0, 2500d0, 500d0, 360d0, 0.d0, 0.d0, 0.d0/)
+!real(8) :: Kspqeq(ntype_pqeq) = (/198.84054d0, 2037.20061d0, 414.04451d0, 301.87609d0, 0.d0, 0.d0, 0.d0/)
 real(8) :: alphacc(ntype_pqeq,ntype_pqeq)
 real(8) :: alphasc(ntype_pqeq,ntype_pqeq)
 real(8) :: alphass(ntype_pqeq,ntype_pqeq)
 real(8) :: lambda_pqeq = 0.462770d0
 
+real(8) :: eFieldStrength=0.0
+integer :: eFieldDir=1
+
 contains
+
+!------------------------------------------------------------------------------
+subroutine save_shell_positions(myrank, step, NATOMS, NBUFFER, atype,pos,spos,q, &
+lata,latb,latc,lalpha,lbeta,lgamma)
+implicit none
+!------------------------------------------------------------------------------
+integer,intent(in) :: step, NATOMS, myrank, NBUFFER
+real(8),intent(in) :: pos(NBUFFER,3),spos(NBUFFER,3),atype(NBUFFER),q(NBUFFER)
+real(8),intent(in) :: lata,latb,latc,lalpha,lbeta,lgamma
+
+integer :: i,l2g
+character(len=9) :: a9
+character(len=4) :: a4
+
+write(a4,'(i4.4)') myrank
+write(a9,'(i9.9)') step
+
+open(111,file="DAT/"//a4//"-"//a9//".shell")
+write(111,'(i6,6f12.6)') NATOMS,lata,latb,latc,lalpha,lbeta,lgamma
+do i=1, NATOMS
+   write(111,'(i6,i3,3f12.6,1x,3f12.6,1x,f12.6)') &
+      l2g(atype(i)), nint(atype(i)),pos(i,1:3),spos(i,1:3),q(i)
+enddo
+close(111)
+
+return
+end subroutine
+
+!-------------------------------------------------------------------------------------------
+subroutine initialize_eField(myid)
+implicit none
+!-------------------------------------------------------------------------------------------
+integer,intent(in) :: myid
+
+if(myid==0) then
+   print'(a)','-----------------------------------------------------------'
+   print'(a,f12.6,i6)','eField [V/A], eFiled direction : ', eFieldStrength, eFieldDir
+   print'(a)','-----------------------------------------------------------'
+endif
+
+return
+end subroutine
+
+!-------------------------------------------------------------------------------------------
+subroutine EEfield(Etotal,NATOMS,pos,q,f,atype,Eev_kcal)
+implicit none 
+!-------------------------------------------------------------------------------------------
+integer,intent(in) :: NATOMS
+real(8),intent(in) :: pos(NATOMS,3),q(NATOMS),atype(NATOMS),Eev_kcal
+
+integer :: i, ity
+
+! NOTE : We've dropped the sinusoidal formulation, thus the energy contribution from 
+! electric field is not defined & updated here.
+real(8) :: Etotal 
+
+real(8) :: f(NATOMS,3), Eenergy, Eforce, qic, shellix
+
+do i=1, NATOMS
+
+   ity = nint(atype(i))
+   qic = q(i) + Zpqeq(ity)
+
+   Eforce  = -qic*eFieldStrength*Eev_kcal
+
+   if(isPolarizable(ity)) then
+      shellix = pos(i,eFieldDir) + spos(i,eFieldDir)
+      Eforce  = Eforce  + Zpqeq(ity)*eFieldStrength*Eev_kcal
+   endif
+
+   Etotal = Etotal + Eenergy
+   f(i,eFieldDir)=f(i,eFieldDir)+Eforce
+enddo
+
+return
+end subroutine
 
 !-------------------------------------------------------------------------------------------
 subroutine get_coulomb_and_dcoulomb_pqeq(rr,alpha,Eclmb,inxn,TBL_Eclmb,ff)
@@ -576,10 +609,16 @@ call set_alphaij_pqeq()
 !--- for PQEq
 do ity = 1, ntype_pqeq
   if( .not. isPolarizable(ity) ) then
-     print'(a,i3,a)','atom type ', ity, ' is not polarizable. Setting Z & K to zero.'
-     Zpqeq(ity)=0.d0
-     Kspqeq(ity)=0.d0
+    print'(a,i3,a)','atom type ', ity, ' is not polarizable. Setting Z & K to zero.'
+    Zpqeq(ity)=0.d0
+    Kspqeq(ity)=0.d0
   else
+    print'(a)','updating chi and eta with PQEq parameter'
+
+    print'(a,4f12.6)', &
+      'chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity) :', &
+       chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity)
+
     chi(ity)=X0pqeq(ity)
     eta(ity)=J0pqeq(ity)
   endif
