@@ -110,6 +110,8 @@ integer :: ns, nr, na, ne
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
 integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = 3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
+integer,parameter :: MODE_QCOPY1_SC = 6   !for QeQ using SC algorithm
+integer,parameter :: MODE_QCOPY2_SC = 7   !for QeQ using SC algorithm
 
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
@@ -193,6 +195,9 @@ integer,allocatable :: nbrlist(:,:), nbrindx(:,:)
 !<nbplist> neighbor list of nonbonding interaction, non-bonding pair list
 integer,allocatable :: nbplist(:,:)
 
+!<nbplist_sc> neighbor list of nonbonding interaction, non-bonding pair list based on SC algorithm
+integer,allocatable :: nbplist_sc(:,:)
+
 !<BO> Bond Order of atoms i-j (nearest neighb only) - (Eq 3a-3d)
 real(8),allocatable :: BO(:,:,:) 
 
@@ -246,7 +251,8 @@ integer :: cc(3), nbcc(3)
 
 integer :: nmesh, nbnmesh
 integer,allocatable :: mesh(:,:), nbmesh(:,:)
-
+integer :: nbnmesh_sc
+integer,allocatable :: nbmesh_sc(:,:,:)
 
 !--- Unit convetors. In original ReaxFF program, the units of length is [A]
 !--- energy is [kcal/mol] and mass is [amu] respectively.

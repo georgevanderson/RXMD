@@ -93,7 +93,7 @@ call get_gradient(Gnew)
 hs(1:NATOMS) = gs(1:NATOMS)
 ht(1:NATOMS) = gt(1:NATOMS)
 
-call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -151,7 +151,7 @@ do nstep_qeq=0, nmax-1
   q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -162,7 +162,7 @@ do nstep_qeq=0, nmax-1
   ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
 
 !--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 enddo
 
@@ -255,6 +255,7 @@ use atoms; use parameters; use MemoryAllocator
 implicit none
 integer :: i,j, ity, jty, n, m, mn, nn
 integer :: c1,c2,c3, c4,c5,c6
+integer :: ci1,ci2,ci3,ci4,ci5,ci6
 real(4) :: dr2
 real(8) :: dr(3), drtb
 real(8) :: alphaij, pqeqc, pqeqs, ff(3)
@@ -265,6 +266,7 @@ integer :: ti,tj,tk
 call system_clock(ti,tk)
 
 nbplist(:,0) = 0
+nbplist_sc(:,0) = 0
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,c4,c5,c6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
@@ -300,6 +302,12 @@ do c3=0, nbcc(3)-1
                nbplist(i,0) = nbplist(i,0) + 1
                nbplist(i,nbplist(i,0)) = j
 
+!--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
+               if (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0) ) then
+!$omp atomic
+                  nbplist_sc(i,0) = nbplist_sc(i,0) + 1
+                  nbplist_sc(i,nbplist_sc(i,0)) = j
+               endif
 !--- get table index and residual value
                itb = int(dr2*UDRi)
                drtb = dr2 - itb*UDR
@@ -333,12 +341,113 @@ do c3=0, nbcc(3)-1
 enddo; enddo; enddo
 !$omp end parallel do
 
+
+!--- MATT TO DO-----------------------------
+!--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
+!--- Determine NT interaction 
+!$omp parallel do schedule(runtime), default(shared), &
+!$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
+do c1=0, nbcc(1)-1
+do c2=0, nbcc(2)-1
+do c3=0, nbcc(3)-1
+
+#ifdef MATT_DEBUG
+          print *,"-------------------------------------------"
+          print '(a,i4,i4,i4)',"c:",c1,c2,c3
+#endif
+
+do mn = 1, nbnmesh_sc
+
+   ci1 = c1+nbmesh_sc(1,mn,1)
+   ci2 = c2+nbmesh_sc(2,mn,1)
+   ci3 = c3+nbmesh_sc(3,mn,1)
+   ci4 = c1+nbmesh_sc(1,mn,2)
+   ci5 = c2+nbmesh_sc(2,mn,2)
+   ci6 = c3+nbmesh_sc(3,mn,2)
+
+!--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
+!--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
+   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
+       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
+!#ifdef MATT_DEBUG
+!          print '(a,i4,i4,i4,i4,i4,i4)',"Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
+!#endif
+          cycle !--one of the interacting cells are resident cells. Skipped
+   endif
+
+#ifdef MATT_DEBUG
+          print '(a,i4,i4,i4,i4,i4,i4)',"Not Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
+#endif
+      
+   i = nbheader(ci1,ci2,ci3)
+   do m = 1, nbnacell(ci1,ci2,ci3)
+
+   ity=nint(atype(i))
+
+   fpqeq(i)=0.d0
+
+      j = nbheader(ci4,ci5,ci6)
+      do n=1, nbnacell(ci4,ci5,ci6)
+
+         if(i/=j) then
+            dr(1:3) = pos(i,1:3) - pos(j,1:3)
+            dr2 =  sum(dr(1:3)*dr(1:3))
+
+            if(dr2 < rctap2) then
+
+               jty = nint(atype(j))
+
+!--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
+!$omp atomic
+                  nbplist_sc(i,0) = nbplist_sc(i,0) + 1
+                  nbplist_sc(i,nbplist_sc(i,0)) = j
+               endif
+!--- get table index and residual value
+               itb = int(dr2*UDRi)
+               drtb = dr2 - itb*UDR
+               drtb = drtb*UDRi
+
+!--- PEQq : 
+               ! contribution from core(i)-core(j)
+               call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
+
+               hessian(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
+
+               !fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
+
+               ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
+               !if( isPolarizable(jty) ) then 
+               !   dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+               !   call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
+
+                  !fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
+               endif
+
+         enddo
+         j=nbllist(j)
+      enddo
+
+   i=nbllist(i)
+   enddo
+enddo; enddo; enddo
+!$omp end parallel do
+
+
+
+
+
+!-------END MATT----------------------------
+
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   nn=maxval(nbplist(1:NATOMS,0))
   i=nstep/pstep+1
   maxas(i,3)=nn
 endif
+
+!--- Compare nbplist and nbplist_sc stat
+   print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
+   print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
 
 call system_clock(tj,tk)
 it_timer(16)=it_timer(16)+(tj-ti)

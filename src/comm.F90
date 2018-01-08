@@ -70,6 +70,10 @@ select case(imode)
       ne = NE_QCOPY1
    case(MODE_QCOPY2)
       ne = NE_QCOPY2
+   case(MODE_QCOPY1_SC)
+      ne = NE_QCOPY1
+   case(MODE_QCOPY2_SC)
+      ne = NE_QCOPY2
    case default
       print'(a,i3)', "ERROR: imode doesn't match in COPYATOMS: ", imode
 end select
@@ -84,10 +88,25 @@ do dflag=1, 6
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
    endif
+  
+   if(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC) then ! for SC, communicate only x+,y+, and z+
+      !print '(a,i3)', "MODE_SC, imode = ", imode
+      if (MOD(dflag,2) == 0) then
+#ifdef MATT_DEBUG
+         print'(a,i3)', "cycle at dflag = ", dflag
+#endif
+         cycle
+      endif
+      !print'(a,i3,i3)', "SC: imode, dflag = ", imode, dflag
+   endif
 
    call store_atoms(tn1, dflag, imode, dr)
    call send_recv(tn1, tn2, myparity(i))
    call append_atoms(dflag, imode)
+
+#ifdef MATT_DEBUG
+   print '(a,i3,i3,i10)', "imode,dflag, ns/ne =", imode,dflag, ns/ne
+#endif
 
 enddo
 
@@ -130,6 +149,12 @@ endif
 
 call system_clock(ttj,tk)
 it_timer(4)=it_timer(4)+(ttj-tti)
+
+
+!-----DELETE_ME
+!if (imode== MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
+   !print'(a,i3,i6)', "(imode) COMM TIME ", imode, ttj-tti
+!endif
 
 return
 CONTAINS 
@@ -280,6 +305,15 @@ if(imode/=MODE_CPBK) then
            sbuffer(ns+2) = ht(n)
            sbuffer(ns+3) = q(n)
 
+        case(MODE_QCOPY1_SC)
+           sbuffer(ns+1) = qs(n)
+           sbuffer(ns+2) = qt(n)
+
+        case(MODE_QCOPY2_SC)
+           sbuffer(ns+1) = hs(n)
+           sbuffer(ns+2) = ht(n)
+           sbuffer(ns+3) = q(n)
+
         end select 
 
 !--- increment the number of atoms to be sent 
@@ -382,6 +416,15 @@ if(imode /= MODE_CPBK) then
               qt(m) = rbuffer(ine+2)
       
            case(MODE_QCOPY2)
+              hs(m) = rbuffer(ine+1)
+              ht(m) = rbuffer(ine+2)
+              q(m)  = rbuffer(ine+3)
+
+           case(MODE_QCOPY1_SC)
+              qs(m) = rbuffer(ine+1)
+              qt(m) = rbuffer(ine+2)
+
+           case(MODE_QCOPY2_SC)
               hs(m) = rbuffer(ine+1)
               ht(m) = rbuffer(ine+2)
               q(m)  = rbuffer(ine+3)

@@ -177,6 +177,7 @@ call MPI_ALLREDUCE(i8, GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
 call allocatori2d(nbrlist,1,NBUFFER,0,MAXNEIGHBS)
 call allocatori2d(nbrindx,1,NBUFFER,1,MAXNEIGHBS)
 call allocatori2d(nbplist,1,NBUFFER,0,MAXNEIGHBS10)
+call allocatori2d(nbplist_sc,1,NBUFFER,0,MAXNEIGHBS10)
 call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
@@ -531,6 +532,8 @@ real(8) :: latticePerNode(3), rr(3), dr2
 real(8) :: maxrcell
 integer :: imesh(3), maximesh, ii(3), i1
 
+integer :: c1(3),c2(3),shift_v(3),mn
+
 !--- initial estimate of LL cell dims
 nblcsize(1:3)=3d0
 
@@ -587,6 +590,54 @@ do k=-imesh(3), imesh(3)
       nbmesh(1:3,nbnmesh) = (/i, j, k/)
    endif
 enddo; enddo; enddo
+
+!----- MATT for SC algorithm
+!----- Allocating nbnmesh_sc using max size of nbnmesh 
+!----- create SC pattern by shift cell interaction to positive quadrant
+call allocatori3d(nbmesh_sc,1,3,1,nbnmesh,1,2)
+
+nbmesh_sc(:,:,:)=0
+nbnmesh_sc=0
+
+do mn = 1, nbnmesh
+#ifdef MATT_DEBUG
+   print '(a,i4,i4,i4)',"mn nbmesh(3)",nbmesh(1,mn),nbmesh(2,mn),nbmesh(3,mn)
+#endif
+!---- shifting cell interaction to SC pattern
+   c1(:) = 0
+   shift_v(:) = 0
+   c2(:) = nbmesh(:,mn)
+
+!---- COLLAPSE: ignore if cell interaction point backward
+   !if (c1(1)+c1(2)*nbcc(1)+c1(3)*(nbcc(1)*nbcc(2)) < c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
+   if (0 > c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
+      cycle
+   endif
+
+   do i = 1,3 !find cell shift vector
+      if (c2(i) < 0) then
+         shift_v(i) = -c2(i)
+      endif
+   enddo
+
+!---- SHIFT: shift FS mesh to SC mesh
+   nbnmesh_sc = nbnmesh_sc + 1
+   nbmesh_sc(:,nbnmesh_sc,1) = c1(:)+shift_v(:)  
+   nbmesh_sc(:,nbnmesh_sc,2) = c2(:)+shift_v(:)  
+
+
+#ifdef MATT_DEBUG
+   print '(a,i4,i4,i4)',"sc pattern c1: ",nbmesh_sc(1,nbnmesh_sc,1),nbmesh_sc(2,nbnmesh_sc,1),nbmesh_sc(3,nbnmesh_sc,1)
+   print '(a,i4,i4,i4)',"sc pattern c2: ",nbmesh_sc(1,nbnmesh_sc,2),nbmesh_sc(2,nbnmesh_sc,2),nbmesh_sc(3,nbnmesh_sc,2)
+   print *,"---------------"
+#endif
+enddo
+
+#ifdef MATT_DEBUG
+   print '(a,i6,i6)',"Size of nbmesh, nbmesh_sc:",nbnmesh,nbnmesh_sc
+#endif
+!---- END MATT SC
+
 
 call allocatori1d(nbllist,1,NBUFFER)
 call allocatori3d(nbheader, &
