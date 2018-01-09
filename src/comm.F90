@@ -74,6 +74,8 @@ select case(imode)
       ne = NE_QCOPY1
    case(MODE_QCOPY2_SC)
       ne = NE_QCOPY2
+   case(MODE_CPHSH_SC)
+      ne = NE_CPHSH_SC
    case default
       print'(a,i3)', "ERROR: imode doesn't match in COPYATOMS: ", imode
 end select
@@ -88,11 +90,20 @@ do dflag=1, 6
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
    endif
-  
+ 
+   if(imode==MODE_CPHSH_SC) then  ! communicate with neighbors in +direction in reversed order
+      if (MOD(dflag,2) == 0) then
+         cycle
+      endif
+      tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
+      tn2 = target_node(7-dflag) ! <-[654321] 
+      i = (6-dflag)/2 + 1         ! <-[321]
+   endif
+   
    if(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC) then ! for SC, communicate only x+,y+, and z+
       !print '(a,i3)', "MODE_SC, imode = ", imode
       if (MOD(dflag,2) == 0) then
-#ifdef MATT_DEBUG
+#if MATT_DEBUG > 1
          print'(a,i3)', "cycle at dflag = ", dflag
 #endif
          cycle
@@ -104,8 +115,8 @@ do dflag=1, 6
    call send_recv(tn1, tn2, myparity(i))
    call append_atoms(dflag, imode)
 
-#ifdef MATT_DEBUG
-   print '(a,i3,i3,i10)', "imode,dflag, ns/ne =", imode,dflag, ns/ne
+#if MATT_DEBUG > 1
+   print '(a,i3,i3,i10,i10)', "imode,dflag, ns/ne, na/ne =", imode,dflag, ns/ne, na/ne
 #endif
 
 enddo
@@ -338,6 +349,26 @@ else if(imode==MODE_CPBK) then
       ns=ns+ne
    enddo
 !=========================================================== FORCE COPYBACK MODE ====
+
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode==MODE_CPHSH_SC) then
+
+   is = 7 - dflag !<- [654321] reversed order direction flag
+
+   n = copyptr(is) - copyptr(is-1) + 1
+   call CheckSizeThenReallocate(sbuffer,n*ne)
+
+   do n=copyptr(is-1)+1, copyptr(is)
+      sbuffer(ns+1) = dble(frcindx(n))
+      sbuffer(ns+2) = hshs(n)
+      sbuffer(ns+3) = hsht(n)
+
+!--- chenge index to point next atom.
+      ns=ns+ne
+   enddo
+!=========================================================== FORCE COPYBACK MODE ====
+
 endif
 
 !--- if myid is the same of target-node ID, don't use MPI call.
@@ -444,13 +475,33 @@ else if(imode == MODE_CPBK) then
       f(m,1:3) = f(m,1:3) + rbuffer(ine+2:ine+4)
    enddo
 
-endif   
 !============================================================== FORCE COPYBACK MODE  ===
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode == MODE_CPHSH_SC) then
+
+   do i=0, nr/ne-1
+!--- get current index <ine> in <rbuffer(1:nr)>.
+      ine=i*ne
+!--- Append the transferred forces into the original position of force array.
+      m = nint(rbuffer(ine+1))
+      hshs(m) = hshs(m) + rbuffer(ine+2)
+      hsht(m) = hsht(m) + rbuffer(ine+3)
+   enddo
+
+endif   
+!============================================================== HSH COPYBACK MODE for SC algorithm of PQeQ  =
+
+
 
 !--- store the last transfered atom index to <dflag> direction.
 !--- if no data have been received, use the index of previous direction.
 if(imode /= MODE_CPBK) then
-  if(nr==0) m = copyptr(dflag-1)
+  if(nr==0 .and. (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC)) then
+     m = copyptr(dflag-2)
+  elseif(nr==0) then 
+     m = copyptr(dflag-1)
+  endif
   copyptr(dflag) = m
 endif
 

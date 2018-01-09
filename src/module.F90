@@ -112,11 +112,13 @@ integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = 3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
 integer,parameter :: MODE_QCOPY1_SC = 6   !for QeQ using SC algorithm
 integer,parameter :: MODE_QCOPY2_SC = 7   !for QeQ using SC algorithm
+integer,parameter :: MODE_CPHSH_SC = 8   !for QeQ using SC algorithm
 
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
 
 integer,parameter :: NE_CPBK = 4
+integer,parameter :: NE_CPHSH_SC = 3
 
 !<MAXLAYERS> MAXimum # of linkedlist cell LAYERS.
 integer,parameter :: MAXLAYERS=5
@@ -240,7 +242,7 @@ real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
 !<Lex_fqs> fraction between two QEq vectors
 !<Lex_w> spring constant
 real(8),allocatable :: qsfp(:),qsfv(:),qtfp(:),qtfv(:) 
-real(8),allocatable :: hessian(:,:)
+real(8),allocatable :: hessian(:,:), hessian_sc(:,:)
 real(8) :: Lex_fqs=1.0, Lex_w=1.d0, Lex_w2=1.d0, Lex_k=2.d0
  
 integer :: ast ! Allocation STatus of allocatable variables.
