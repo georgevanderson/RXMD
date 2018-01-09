@@ -399,42 +399,38 @@ do mn = 1, nbnmesh_sc
 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
 !$omp atomic
-                  nbplist_sc(i,0) = nbplist_sc(i,0) + 1
-                  nbplist_sc(i,nbplist_sc(i,0)) = j
-               endif
+               nbplist_sc(i,0) = nbplist_sc(i,0) + 1
+               nbplist_sc(i,nbplist_sc(i,0)) = j
+            endif
 !--- get table index and residual value
-               itb = int(dr2*UDRi)
-               drtb = dr2 - itb*UDR
-               drtb = drtb*UDRi
+            itb = int(dr2*UDRi)
+            drtb = dr2 - itb*UDR
+            drtb = drtb*UDRi
 
 !--- PEQq : 
-               ! contribution from core(i)-core(j)
-               call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
+            ! contribution from core(i)-core(j)
+            call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
 
-               hessian(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
+            hessian(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
 
-               !fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
+            !fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
 
-               ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
-               !if( isPolarizable(jty) ) then 
-               !   dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
-               !   call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
+            ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
+            !if( isPolarizable(jty) ) then 
+            !   dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+            !   call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
 
-                  !fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
-               endif
+               !fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
+            endif
 
-         enddo
          j=nbllist(j)
-      enddo
+         enddo !loop atom in cell j
+      i=nbllist(i)
+      enddo !loop atom in cell i
 
-   i=nbllist(i)
-   enddo
+   enddo !do mn = nbmesh_sc
 enddo; enddo; enddo
 !$omp end parallel do
-
-
-
-
 
 !-------END MATT----------------------------
 
@@ -445,9 +441,25 @@ if(mod(nstep,pstep)==0) then
   maxas(i,3)=nn
 endif
 
+
+#ifdef MATT_DEBUG
 !--- Compare nbplist and nbplist_sc stat
-   print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
-   print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
+do i = 1,NBUFFER
+   do j = 1,nbplist(i,0)
+      print '(a,i10,i10)', "nbplist: ", i,nbplist(i,j)
+   enddo
+enddo
+
+do i = 1,NBUFFER
+   do j = 1,nbplist_sc(i,0)
+      print '(a,i10,i10)', "nbplist_sc: ", i,nbplist_sc(i,j)
+   enddo
+enddo
+
+
+print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
+print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
+#endif
 
 call system_clock(tj,tk)
 it_timer(16)=it_timer(16)+(tj-ti)

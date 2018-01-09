@@ -532,7 +532,7 @@ real(8) :: latticePerNode(3), rr(3), dr2
 real(8) :: maxrcell
 integer :: imesh(3), maximesh, ii(3), i1
 
-integer :: c1(3),c2(3),shift_v(3),mn
+integer :: c1(3),c2(3),shift_v(3),mn,cidx
 
 !--- initial estimate of LL cell dims
 nblcsize(1:3)=3d0
@@ -610,7 +610,9 @@ do mn = 1, nbnmesh
 
 !---- COLLAPSE: ignore if cell interaction point backward
    !if (c1(1)+c1(2)*nbcc(1)+c1(3)*(nbcc(1)*nbcc(2)) < c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
-   if (0 > c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
+   cidx = c2(1)+c2(2)*(nbcc(1)+imesh(1))+c2(3)*((nbcc(1)+imesh(1))*(nbcc(2)+imesh(2)))
+   !if (0 > c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
+   if (cidx < 0) then
       cycle
    endif
 
@@ -627,11 +629,17 @@ do mn = 1, nbnmesh
 
 
 #ifdef MATT_DEBUG
-   print '(a,i4,i4,i4)',"sc pattern c1: ",nbmesh_sc(1,nbnmesh_sc,1),nbmesh_sc(2,nbnmesh_sc,1),nbmesh_sc(3,nbnmesh_sc,1)
-   print '(a,i4,i4,i4)',"sc pattern c2: ",nbmesh_sc(1,nbnmesh_sc,2),nbmesh_sc(2,nbnmesh_sc,2),nbmesh_sc(3,nbnmesh_sc,2)
+   print '(a,i4,i4,i4,i4,i4,i4)',"sc pattern c1: ",nbmesh_sc(1,nbnmesh_sc,1),nbmesh_sc(2,nbnmesh_sc,1),nbmesh_sc(3,nbnmesh_sc,1), &
+         nbmesh_sc(1,nbnmesh_sc,2),nbmesh_sc(2,nbnmesh_sc,2),nbmesh_sc(3,nbnmesh_sc,2)
+   !print '(a,i4,i4,i4)',"sc pattern c2: ",nbmesh_sc(1,nbnmesh_sc,2),nbmesh_sc(2,nbnmesh_sc,2),nbmesh_sc(3,nbnmesh_sc,2)
    print *,"---------------"
 #endif
 enddo
+
+!do i = 1, nbnmesh_sc-1
+!   do j = i,nbnmesh_sc
+!   if (c1(1)+c1(2)*nbcc(1)+c1(3)*(nbcc(1)*nbcc(2)) < c2(1)+c2(2)*nbcc(1)+c2(3)*(nbcc(1)*nbcc(2))) then
+      
 
 #ifdef MATT_DEBUG
    print '(a,i6,i6)',"Size of nbmesh, nbmesh_sc:",nbnmesh,nbnmesh_sc
