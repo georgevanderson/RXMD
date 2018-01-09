@@ -17,7 +17,7 @@ implicit none
 real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
 real(8),intent(out) :: q(NBUFFER)
 
-real(8) :: fpqeq(NBUFFER)
+!real(8) :: fpqeq(NBUFFER)
 real(8) :: vdummy(1,1), fdummy(1,1)
 
 integer :: i,j,l2g
@@ -69,6 +69,10 @@ end select
 open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
+#ifdef PQEQDUMP
+open(92,file="pqeqdump_before"//trim(rankToString(myid))//".txt")
+open(93,file="pqeqdump_after"//trim(rankToString(myid))//".txt")
+#endif
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
 call COPYATOMS(MODE_COPY, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
@@ -105,14 +109,32 @@ do nstep_qeq=0, nmax-1
 
   !call get_hsh(Est)
   call get_hsh_sc(Est)
+
+#ifdef PQEQDUMP 
+do i=1, NATOMS
+   !do j1=1,nbplist_sc(i,0)
+   !   j = nbplist_sc(i,j1)
+      write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
+   !enddo
+enddo
+#endif
   call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+
 
   call MPI_ALLREDUCE(Est, GEst1, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
-#ifdef QEQDUMP 
-  if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
+#ifdef PQEQDUMP 
+do i=1, NATOMS
+   !do j1=1,nbplist_sc(i,0)
+   !   j = nbplist_sc(i,j1)
+      write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
+   !enddo
+enddo
 #endif
 
+#ifdef PQEQDUMP
+  if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
+#endif
   if( ( 0.5d0*( abs(GEst2) + abs(GEst1) ) < QEq_tol) ) exit 
   if( abs(GEst2) > 0.d0 .and. (abs(GEst1/GEst2-1.d0) < QEq_tol) ) exit
   GEst2 = GEst1
@@ -153,7 +175,7 @@ do nstep_qeq=0, nmax-1
   q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -359,7 +381,7 @@ do c1=0, nbcc(1)-1
 do c2=0, nbcc(2)-1
 do c3=0, nbcc(3)-1
 
-#ifdef MATT_DEBUG
+#if MATT_DEBUG > 1
           print *,"-------------------------------------------"
           print '(a,i4,i4,i4)',"c:",c1,c2,c3
 #endif
@@ -383,7 +405,7 @@ do mn = 1, nbnmesh_sc
           cycle !--one of the interacting cells are resident cells. Skipped
    endif
 
-#ifdef MATT_DEBUG
+#if MATT_DEBUG > 1
           print '(a,i4,i4,i4,i4,i4,i4)',"Not Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
 #endif
       
@@ -392,7 +414,7 @@ do mn = 1, nbnmesh_sc
 
    ity=nint(atype(i))
 
-   fpqeq(i)=0.d0
+   !fpqeq(i)=0.d0
 
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
@@ -502,8 +524,8 @@ do i=1, NATOMS + na/ne
 
    !avoid hshs and hsht double counting by compute only for resident atoms
    if (i <= NATOMS) then
-      hshs(i) = hshs(i) + eta_ity*hs(i)
-      hsht(i) = hsht(i) + eta_ity*ht(i)
+      hshs(i) = eta_ity*hs(i)
+      hsht(i) = eta_ity*ht(i)
    endif
 
 !--- for PQEq
@@ -545,7 +567,7 @@ do i=1, NATOMS + na/ne
       if(isPolarizable(jty)) then
          dr(1:3)=shellj(1:3)-pos(i,1:3)
          !call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
-         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csjci,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
          Csjci=-Cclmb0_qeq*Csjci*qjc*Zpqeq(ity)
       endif
 
@@ -653,6 +675,54 @@ call system_clock(tj,tk)
 it_timer(18)=it_timer(18)+(tj-ti)
 
 end subroutine 
+
+!-----------------------------------------------------------------------------------------------------------------------
+subroutine get_gradient_sc(Gnew)
+use atoms; use parameters
+! Update gradient vector <g> and new residue <Gnew>
+!-----------------------------------------------------------------------------------------------------------------------
+implicit none
+real(8),intent(OUT) :: Gnew(2)
+real(8) :: eta_ity, ggnew(2)
+integer :: i,j,j1, ity
+
+real(8) :: gssum, gtsum
+
+integer :: ti,tj,tk
+call system_clock(ti,tk)
+
+gs(:) = 0.d0
+gt(:) = 0.d0
+
+!$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
+do i=1,NATOMS + na/ne
+
+   gssum=0.d0
+   gtsum=0.d0
+   do j1=1, nbplist_sc(i,0) 
+      j = nbplist_sc(i,j1)
+      gssum = gssum + hessian_sc(j1,i)*qs(j)
+      gtsum = gtsum + hessian_sc(j1,i)*qt(j)
+   enddo
+
+   ity = nint(atype(i))
+   eta_ity = eta(ity)
+
+   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum - fpqeq(i)
+   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
+
+enddo 
+!$omp end parallel do
+
+ggnew(1) = dot_product(gs(1:NATOMS), gs(1:NATOMS))
+ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
+call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+
+call system_clock(tj,tk)
+it_timer(19)=it_timer(19)+(tj-ti)
+
+end subroutine
+
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine get_gradient(Gnew)

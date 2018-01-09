@@ -71,7 +71,7 @@ select case(imode)
    case(MODE_QCOPY2)
       ne = NE_QCOPY2
    case(MODE_QCOPY1_SC)
-      ne = NE_QCOPY1
+      ne = NE_QCOPY1_SC
    case(MODE_QCOPY2_SC)
       ne = NE_QCOPY2
    case(MODE_CPHSH_SC)
@@ -319,6 +319,7 @@ if(imode/=MODE_CPBK) then
         case(MODE_QCOPY1_SC)
            sbuffer(ns+1) = qs(n)
            sbuffer(ns+2) = qt(n)
+           sbuffer(ns+3) = fpqeq(n)
 
         case(MODE_QCOPY2_SC)
            sbuffer(ns+1) = hs(n)
@@ -454,6 +455,7 @@ if(imode /= MODE_CPBK) then
            case(MODE_QCOPY1_SC)
               qs(m) = rbuffer(ine+1)
               qt(m) = rbuffer(ine+2)
+              fpqeq(m) = rbuffer(ine+3)
 
            case(MODE_QCOPY2_SC)
               hs(m) = rbuffer(ine+1)
