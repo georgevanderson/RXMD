@@ -117,6 +117,7 @@ integer,parameter :: MODE_CPHSH_SC = 8   !for QeQ using SC algorithm
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
 integer,parameter :: NE_QCOPY1_SC = 3
+integer,parameter :: NE_QCOPY2_SC = 4
 
 integer,parameter :: NE_CPBK = 4
 integer,parameter :: NE_CPHSH_SC = 3
@@ -315,8 +316,11 @@ integer :: sstep
 integer :: fstep, pstep
 
 !--- <frcindx> FoRCe INDeX. Index to return calculated force to original atoms.
+!--- <scindx> SC INDeX. Index to return calculated value for SC algorithm (e.g. 3-way communication) to original atoms.
 integer,allocatable :: frcindx(:)
+integer,allocatable :: scindx(:)
 integer :: copyptr(0:6)
+integer :: copyptr_sc(0:6)
 
 !--- stress components
 real(8) :: xx,yy,zz,yz,zx,xy

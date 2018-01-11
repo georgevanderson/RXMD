@@ -215,6 +215,7 @@ qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=
 
 !--- returning force index array 
 call allocatori1d(frcindx,1,NBUFFER)
+call allocatori1d(scindx,1,NBUFFER)
 
 !--- setup potential table
 call POTENTIALTABLE()

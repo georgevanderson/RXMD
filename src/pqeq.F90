@@ -354,12 +354,14 @@ do c3=0, nbcc(3)-1
                nbplist(i,nbplist(i,0)) = j
 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
-               !sc_test = (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0)) 
-               !if (sc_test .eqv. .TRUE.) then
+               sc_test = (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0)) 
+               if (sc_test .eqv. .TRUE.) then
+                  if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
 !$omp atomic
-                  !nbplist_sc(i,0) = nbplist_sc(i,0) + 1
-                  !nbplist_sc(i,nbplist_sc(i,0)) = j
-               !endif
+                  nbplist_sc(i,0) = nbplist_sc(i,0) + 1
+                  nbplist_sc(i,nbplist_sc(i,0)) = j
+                  endif
+               endif
 !--- get table index and residual value
                itb = int(dr2*UDRi)
                drtb = dr2 - itb*UDR
@@ -370,9 +372,11 @@ do c3=0, nbcc(3)-1
                call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
 
                hessian(nbplist(i,0),i) = Cclmb0_qeq * pqeqc
-               !if (sc_test .eqv. .TRUE.) then
-               !   hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
-               !endif
+               if (sc_test .eqv. .TRUE.) then
+                  if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
+                     hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
+                  endif
+               endif
 
                fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
 
@@ -422,13 +426,13 @@ do mn = 1, nbnmesh_sc
 
 !--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
 !--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
-!   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
-!       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
+   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
+       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
 !#ifdef MATT_DEBUG
 !          print '(a,i4,i4,i4,i4,i4,i4)',"Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
 !#endif
-!          cycle !--one of the interacting cells are resident cells. Skipped
-!   endif
+          cycle !--one of the interacting cells are resident cells. Skipped
+   endif
 
 !#if MATT_DEBUG > 1
 !          print '(a,i4,i4,i4,i4,i4,i4)',"Not Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
@@ -441,16 +445,11 @@ do mn = 1, nbnmesh_sc
 
    !fpqeq(i)=0.d0
 
-      if (nbheader(ci1,ci2,ci3) == nbheader(ci4,ci5,ci6)) then
-         duplicate_test = (i<j)
-      else
-         duplicate_test = .True.
-      endif
-
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
 
          !if(i/=j) then
+         !compute only atoms in the same cell
          if(nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6) .or. (i<j)) then
             dr(1:3) = pos(i,1:3) - pos(j,1:3)
             dr2 =  sum(dr(1:3)*dr(1:3))
@@ -490,7 +489,7 @@ do mn = 1, nbnmesh_sc
          enddo !loop atom in cell j
       i=nbllist(i)
       enddo !loop atom in cell i
-
+   
    enddo !do mn = nbmesh_sc
 enddo; enddo; enddo
 !$omp end parallel do
