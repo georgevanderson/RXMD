@@ -211,6 +211,8 @@ call allocatord1d(hsht,1,NBUFFER)
 call allocatord2d(hessian,1,MAXNEIGHBS10,1,NBUFFER)
 call allocatord2d(hessian_sc,1,MAXNEIGHBS10,1,NBUFFER)
 call allocatord1d(fpqeq,1,NBUFFER)
+call allocatord1d(gssum,1,NBUFFER)
+call allocatord1d(gtsum,1,NBUFFER)
 qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
 
 !--- returning force index array 

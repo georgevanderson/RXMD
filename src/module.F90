@@ -110,9 +110,10 @@ integer :: ns, nr, na, ne
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
 integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = 3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
-integer,parameter :: MODE_QCOPY1_SC = 6   !for QeQ using SC algorithm
-integer,parameter :: MODE_QCOPY2_SC = 7   !for QeQ using SC algorithm
-integer,parameter :: MODE_CPHSH_SC = 8   !for QeQ using SC algorithm
+integer,parameter :: MODE_QCOPY1_SC = 6   !for PQeQ using SC algorithm
+integer,parameter :: MODE_QCOPY2_SC = 7   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPHSH_SC = 8   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPGSGT_SC = 9   !for PQeQ using SC algorithm
 
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
@@ -121,6 +122,7 @@ integer,parameter :: NE_QCOPY2_SC = 4
 
 integer,parameter :: NE_CPBK = 4
 integer,parameter :: NE_CPHSH_SC = 3
+integer,parameter :: NE_CPGSGT_SC = 3
 
 real(8),allocatable :: fpqeq(:) !fpqeq become global variable for SC algorithm
 
@@ -241,6 +243,7 @@ logical :: isBinary, isBondFile, isPDB
 
 ! Two vectors electrostatic energy minimization 
 real(8),allocatable :: qs(:),qt(:),gs(:), gt(:), hs(:), ht(:), hshs(:), hsht(:)
+real(8),allocatable :: gssum(:), gtsum(:)
 
 !--- variables for extended Lagrangian method ---
 !<Lex_fqs> fraction between two QEq vectors

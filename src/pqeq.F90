@@ -198,6 +198,7 @@ print '(a10,2es25.15)', "after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
+  !call get_gradient_sc(Gnew)
   call get_gradient(Gnew)
 
 !--- get new conjugate direction
@@ -354,14 +355,14 @@ do c3=0, nbcc(3)-1
                nbplist(i,nbplist(i,0)) = j
 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
-               sc_test = (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0)) 
-               if (sc_test .eqv. .TRUE.) then
-                  if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
+               !sc_test = (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0)) 
+               !if (sc_test .eqv. .TRUE.) then
+               !   if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
 !$omp atomic
-                  nbplist_sc(i,0) = nbplist_sc(i,0) + 1
-                  nbplist_sc(i,nbplist_sc(i,0)) = j
-                  endif
-               endif
+               !   nbplist_sc(i,0) = nbplist_sc(i,0) + 1
+               !   nbplist_sc(i,nbplist_sc(i,0)) = j
+               !   endif
+               !endif
 !--- get table index and residual value
                itb = int(dr2*UDRi)
                drtb = dr2 - itb*UDR
@@ -372,11 +373,11 @@ do c3=0, nbcc(3)-1
                call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
 
                hessian(nbplist(i,0),i) = Cclmb0_qeq * pqeqc
-               if (sc_test .eqv. .TRUE.) then
-                  if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
-                     hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
-                  endif
-               endif
+               !if (sc_test .eqv. .TRUE.) then
+               !   if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
+               !      hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
+               !   endif
+               !endif
 
                fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
 
@@ -426,13 +427,13 @@ do mn = 1, nbnmesh_sc
 
 !--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
 !--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
-   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
-       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
+!   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
+!       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
 !#ifdef MATT_DEBUG
 !          print '(a,i4,i4,i4,i4,i4,i4)',"Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
 !#endif
-          cycle !--one of the interacting cells are resident cells. Skipped
-   endif
+!          cycle !--one of the interacting cells are resident cells. Skipped
+!   endif
 
 !#if MATT_DEBUG > 1
 !          print '(a,i4,i4,i4,i4,i4,i4)',"Not Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
@@ -564,7 +565,7 @@ do i=1, NATOMS + na/ne
    qic = q(i) + Zpqeq(ity)
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
 
-   dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
+   !dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
 
    !avoid Est q(i)*q(i) double counting. Only do this for resident atoms
    if (i <= NATOMS) then
@@ -588,6 +589,7 @@ do i=1, NATOMS + na/ne
       !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
       !Ccicj = Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
       Ccicj = Ccicj*qic*qjc  !core i-j full
+      !Ccicj = Ccicj*Zpqeq(ity)*Zpqeq(jty)  !core i-j full
       !print '(a10,es25.15)',"Ccicj:",Ccicj
 
       !--- shell-i/core-j
@@ -617,6 +619,7 @@ do i=1, NATOMS + na/ne
          !print '(a10,6es25.15)',"dist:",shelli(:),shellj(:)
          !print '(a10,3es25.15)',"dr:",dr(:)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Csisj,inxnpqeq(ity,jty),TBL_Eclmb_pss,ff)
+         !Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
          Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
          !print '(a10,es25.15)',"Csisj:",Csisj
       endif
@@ -701,7 +704,7 @@ do i=1, NATOMS
       Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0
 
       Ccicj = hessian(j1,i)
-      Ccicj = Cclmb0_qeq*Ccicj*qic*qjc*0.5d0
+      Ccicj = Ccicj*qic*qjc*0.5d0
 
       if(isPolarizable(ity)) then
          dr(1:3)=shelli(1:3)-pos(j,1:3)
@@ -743,40 +746,51 @@ real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)
 integer :: i,j,j1, ity
 
-real(8) :: gssum, gtsum
-
+!real(8) :: gssum, gtsum
 integer :: ti,tj,tk
 call system_clock(ti,tk)
 
-gs(:) = 0.d0
-gt(:) = 0.d0
+gssum(:) = 0.d0
+gtsum(:) = 0.d0
+
+!gs(:) = 0.d0
+!gt(:) = 0.d0
 
 !$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
 do i=1,NATOMS + na/ne
 
-   gssum=0.d0
-   gtsum=0.d0
    do j1=1, nbplist_sc(i,0) 
       j = nbplist_sc(i,j1)
-      gssum = gssum + hessian_sc(j1,i)*qs(j)
-      gtsum = gtsum + hessian_sc(j1,i)*qt(j)
+      gssum(i) = gssum(i) + hessian_sc(j1,i)*qs(j)
+      gtsum(i) = gtsum(i) + hessian_sc(j1,i)*qt(j)
+
+      gssum(j) = gssum(j) + hessian_sc(j1,i)*qs(i)
+      gtsum(j) = gtsum(j) + hessian_sc(j1,i)*qt(i)
    enddo
+
+enddo 
+!$omp end parallel do
+
+call COPYATOMS(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+
+do i=1,NATOMS
 
    ity = nint(atype(i))
    eta_ity = eta(ity)
 
-   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum - fpqeq(i)
-   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
+   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum(i) - fpqeq(i)
+   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum(i)
 
-enddo 
-!$omp end parallel do
+enddo
 
 ggnew(1) = dot_product(gs(1:NATOMS), gs(1:NATOMS))
 ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
 call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
 
+
 call system_clock(tj,tk)
 it_timer(19)=it_timer(19)+(tj-ti)
+
 
 end subroutine
 
@@ -791,7 +805,7 @@ real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)
 integer :: i,j,j1, ity
 
-real(8) :: gssum, gtsum
+real(8) :: lgssum, lgtsum
 
 integer :: ti,tj,tk
 call system_clock(ti,tk)
@@ -799,19 +813,19 @@ call system_clock(ti,tk)
 !$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
 do i=1,NATOMS
 
-   gssum=0.d0
-   gtsum=0.d0
+   lgssum=0.d0
+   lgtsum=0.d0
    do j1=1, nbplist(i,0) 
       j = nbplist(i,j1)
-      gssum = gssum + hessian(j1,i)*qs(j)
-      gtsum = gtsum + hessian(j1,i)*qt(j)
+      lgssum = lgssum + hessian(j1,i)*qs(j)
+      lgtsum = lgtsum + hessian(j1,i)*qt(j)
    enddo
 
    ity = nint(atype(i))
    eta_ity = eta(ity)
 
-   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum - fpqeq(i)
-   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
+   gs(i) = - chi(ity) - eta_ity*qs(i) - lgssum - fpqeq(i)
+   gt(i) = - 1.d0     - eta_ity*qt(i) - lgtsum
 
 enddo 
 !$omp end parallel do
