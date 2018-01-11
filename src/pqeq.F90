@@ -67,6 +67,7 @@ end select
 
 #ifdef QEQDUMP 
 open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
+open(94,file="pqeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
 #ifdef PQEQDUMP
@@ -83,7 +84,23 @@ call qeq_initialize()
 do i=1, NATOMS
    do j1=1,nbplist(i,0)
       j = nbplist(i,j1)
-      write(91,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian(j1,i)
+      !write(91,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian(j1,i)
+      write(91,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian(j1,i)
+   enddo
+enddo
+#endif
+
+#ifdef PQEQDUMP 
+do i=1, NATOMS + na/ne
+   do j1=1,nbplist_sc(i,0)
+      j = nbplist_sc(i,j1)
+      !write(94,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
+      !write(94,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
+         if (l2g(atype(i)) < l2g(atype(j))) then
+          write(94,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
+       else
+          write(94,'(5i6,4es25.15)') nstep, j,i,l2g(atype(j)),l2g(atype(i)),hessian_sc(j1,i)
+       endif
    enddo
 enddo
 #endif
@@ -117,6 +134,7 @@ do i=1, NATOMS
       write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
+print '(a10,2es25.15)', "before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 #endif
   call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
@@ -130,9 +148,10 @@ do i=1, NATOMS
       write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
+print '(a10,2es25.15)', "after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 #endif
 
-#ifdef PQEQDUMP
+#ifdef QEQDUMP
   if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
 #endif
   if( ( 0.5d0*( abs(GEst2) + abs(GEst1) ) < QEq_tol) ) exit 
@@ -203,6 +222,11 @@ it_timer(24)=it_timer(24)+nstep_qeq
 close(91)
 #endif
 
+#ifdef PQEQDUMP 
+close(92)
+close(93)
+close(94)
+#endif
 return 
 
 CONTAINS
@@ -431,7 +455,6 @@ do mn = 1, nbnmesh_sc
 !$omp atomic
                nbplist_sc(i,0) = nbplist_sc(i,0) + 1
                nbplist_sc(i,nbplist_sc(i,0)) = j
-            endif
 !--- get table index and residual value
             itb = int(dr2*UDRi)
             drtb = dr2 - itb*UDR
@@ -443,6 +466,7 @@ do mn = 1, nbnmesh_sc
 
             hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
 
+
             !fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
 
             ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
@@ -452,6 +476,7 @@ do mn = 1, nbnmesh_sc
 
                !fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
             endif
+          endif
 
          j=nbllist(j)
          enddo !loop atom in cell j
@@ -537,6 +562,7 @@ do i=1, NATOMS + na/ne
    !avoid Est q(i)*q(i) double counting. Only do this for resident atoms
    if (i <= NATOMS) then
       Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
+      !Est = Est + chi(ity)*q(i) + eta_ity*q(i)*q(i)
    endif
 
    do j1 = 1, nbplist_sc(i,0)
@@ -549,26 +575,43 @@ do i=1, NATOMS + na/ne
 
       Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0; Csjci=0.d0
 
+!--- core-i/core-j
       Ccicj = hessian_sc(j1,i)
-      Ccicj = Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
+      !dr(1:3)=pos(i,1:3)-pos(j,1:3)
+      !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
+      !Ccicj = Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
+      Ccicj = Ccicj*qic*qjc  !core i-j full
+      !print '(a10,es25.15)',"Ccicj:",Ccicj
 
+      !--- shell-i/core-j
       if(isPolarizable(ity)) then
          dr(1:3)=shelli(1:3)-pos(j,1:3)
+         !print '(a10,6es25.15)',"dist:",shelli(:),pos(j,:)
+         !print '(a10,3es25.15)',"dr:",dr(:)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csicj,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
          Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
-
-         if(isPolarizable(jty)) then
-             dr(1:3)=shelli(1:3)-shellj(1:3)
-             call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Csisj,inxnpqeq(ity,jty),TBL_Eclmb_pss,ff)
-             Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
-         endif
+         !print '(a10,es25.15)',"Csicj:",Csicj
       endif
-
+       
+      !--- core-i/shell-j
       if(isPolarizable(jty)) then
          dr(1:3)=shellj(1:3)-pos(i,1:3)
+         !print '(a10,6es25.15)',"dist:",shellj(:),pos(i,:)
+         !print '(a10,3es25.15)',"dr:",dr(:)
          !call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
          Csjci=-Cclmb0_qeq*Csjci*qjc*Zpqeq(ity)
+         !print '(a10,es25.15)',"Csjci:",Csjci
+      endif
+
+         !--- shell-i/shell-j
+      if(isPolarizable(ity) .and. isPolarizable(jty)) then
+         dr(1:3)=shelli(1:3)-shellj(1:3)
+         !print '(a10,6es25.15)',"dist:",shelli(:),shellj(:)
+         !print '(a10,3es25.15)',"dr:",dr(:)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Csisj,inxnpqeq(ity,jty),TBL_Eclmb_pss,ff)
+         Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
+         !print '(a10,es25.15)',"Csisj:",Csisj
       endif
 
       hshs(i) = hshs(i) + hessian_sc(j1,i)*hs(j)
@@ -578,10 +621,17 @@ do i=1, NATOMS + na/ne
       hsht(j) = hsht(j) + hessian_sc(j1,i)*ht(i)
 
 
-
 !--- In FS PQeQ, get half of potential energy, then sum it up if atoms are resident.
 !--- But in SC PQeQ, get full potential energy (no duplicate atom pair) and sum up all atoms including cached atoms.
       Est1 = Ccicj + Csicj + Csjci + Csisj
+      
+      !if (i < j) then  
+         !print '(a,2i5,es25.15)',"Energy (i,j):",i,j,Est1
+         !print '(a,2i5,5es15.7)',"i,j,Ccicj,Csicj,Csjci,Csisj:",i,j,Est1,Ccicj,Csicj,Csjci,Csisj
+      !else
+         !print '(a,2i5,es25.15)',"Energy (i,j):",j,i,Est1
+         !print '(a,2i5,5es15.7)',"i,j,Ccicj,Csicj,Csjci,Csisj:",j,i,Est1,Ccicj,Csicj,Csjci,Csisj
+      !endif 
 
       !Est = Est + 0.5d0*Est1
       !if(j<=NATOMS) Est = Est + 0.5d0*Est1

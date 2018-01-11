@@ -89,26 +89,19 @@ do dflag=1, 6
       tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
-   endif
  
-   if(imode==MODE_CPHSH_SC) then  ! communicate with neighbors in +direction in reversed order
+   elseif(imode==MODE_CPHSH_SC) then  ! communicate with neighbors in +direction in reversed order
       if (MOD(dflag,2) == 0) then
          cycle
       endif
       tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
-   endif
    
-   if(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC) then ! for SC, communicate only x+,y+, and z+
-      !print '(a,i3)', "MODE_SC, imode = ", imode
+   elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC) then ! for SC, communicate only x+,y+, and z+
       if (MOD(dflag,2) == 0) then
-#if MATT_DEBUG > 1
-         print'(a,i3)', "cycle at dflag = ", dflag
-#endif
          cycle
       endif
-      !print'(a,i3,i3)', "SC: imode, dflag = ", imode, dflag
    endif
 
    call store_atoms(tn1, dflag, imode, dr)
@@ -160,12 +153,6 @@ endif
 
 call system_clock(ttj,tk)
 it_timer(4)=it_timer(4)+(ttj-tti)
-
-
-!-----DELETE_ME
-!if (imode== MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
-   !print'(a,i3,i6)', "(imode) COMM TIME ", imode, ttj-tti
-!endif
 
 return
 CONTAINS 
@@ -259,7 +246,7 @@ ns=0
 
 cptridx=((dflag-1)/2)*2 ! <- [002244]
 
-if(imode/=MODE_CPBK) then
+if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC) then
 
 !--- # of elements to be sent. should be more than enough. 
    ni = copyptr(cptridx)*ne
@@ -354,7 +341,7 @@ else if(imode==MODE_CPBK) then
 
 !===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
 else if(imode==MODE_CPHSH_SC) then
-
+!   print *, "storing hshs and hsht"
    is = 7 - dflag !<- [654321] reversed order direction flag
 
    n = copyptr(is) - copyptr(is-1) + 1
@@ -409,7 +396,7 @@ if( (na+nr)/ne > NBUFFER) then
     stop
 endif
 
-if(imode /= MODE_CPBK) then  
+if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC) then
 
 !--- go over the buffered atom
    do i=0, nr/ne-1
@@ -481,7 +468,7 @@ else if(imode == MODE_CPBK) then
 
 !===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
 else if(imode == MODE_CPHSH_SC) then
-
+!   print *, "adding hshs and hsht"
    do i=0, nr/ne-1
 !--- get current index <ine> in <rbuffer(1:nr)>.
       ine=i*ne
