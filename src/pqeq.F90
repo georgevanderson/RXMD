@@ -75,7 +75,7 @@ open(92,file="pqeqdump_before"//trim(rankToString(myid))//".txt")
 open(93,file="pqeqdump_after"//trim(rankToString(myid))//".txt")
 #endif
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-call COPYATOMS(MODE_COPY, QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
@@ -194,12 +194,12 @@ print '(a10,2es25.15)', "after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
   q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
-  !call get_gradient_sc(Gnew)
-  call get_gradient(Gnew)
+  call get_gradient_sc(Gnew)
+  !call get_gradient(Gnew)
 
 !--- get new conjugate direction
   hs(1:NATOMS) = gs(1:NATOMS) + (Gnew(1)/Gold(1))*hs(1:NATOMS)
@@ -211,7 +211,8 @@ print '(a10,2es25.15)', "after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 enddo
 
 !--- for PQEq
-call update_shell_positions()
+!call update_shell_positions()
+call update_shell_positions_sc()
 
 call system_clock(j1,k1)
 it_timer(1)=it_timer(1)+(j1-i1)
@@ -294,6 +295,92 @@ enddo
 
 
 end subroutine
+
+!-----------------------------------------------------------------------------------------------------------------------
+subroutine update_shell_positions_sc()
+implicit none
+!-----------------------------------------------------------------------------------------------------------------------
+integer :: i,ity,j,jty,j1,inxn
+real(8) :: shelli(3),shellj(3), qic, qjc, clmb, dclmb, dr2
+!real(8) :: sforce(NATOMS,3), sf(3), Esc, Ess
+real(8) :: sf(3), Esc, Ess
+real(8) :: ff(3)
+
+real(8) :: dr(3)
+
+sforce(1:NBUFFER,1:3)=0.d0
+
+do i=1, NATOMS + na/ne
+
+   ity = nint(atype(i))
+
+   ! if i-atom is not polarizable, no force acting on i-shell. 
+   !if( .not. isPolarizable(ity) ) cycle 
+
+   if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
+
+   !core-i shell-i interaction
+   if( isPolarizable(ity) .and. i <= NATOMS ) then
+      sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
+   endif
+
+   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
+   qic = q(i) + Zpqeq(ity)
+
+   do j1 = 1, nbplist_sc(i,0)
+
+      j = nbplist_sc(i,j1)
+      jty = nint(atype(j))
+
+      qjc = q(j) + Zpqeq(jty)
+      shellj(1:3) = pos(j,1:3) + spos(j,1:3)
+
+      ! j-atom can be either polarizable or non-polarizable. In either case,
+      ! there will be force on i-shell from j-core.  qjc takes care of the difference.  Eq. (38)
+      if( isPolarizable(ity) ) then
+         dr(1:3)=shelli(1:3)-pos(j,1:3)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Esc, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
+
+         ff(1:3)=-Cclmb0*sf(1:3)*qjc*Zpqeq(ity)
+         sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
+      endif
+
+      ! there will be force on j-shell from i-core.  qjc takes care of the difference.  Eq. (38)
+      if( isPolarizable(jty) ) then
+         dr(1:3)=shellj(1:3)-pos(i,1:3)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Esc, inxnpqeq(jty, ity), TBL_Eclmb_psc,sf)
+
+         ff(1:3)=-Cclmb0*sf(1:3)*qic*Zpqeq(ity)
+         sforce(j,1:3)=sforce(j,1:3)-ff(1:3)
+      endif
+
+      ! if j-atom is polarizable, there will be force on i-shell from j-shell. Eq. (38)
+      if(  isPolarizable(jty) .and. isPolarizable(jty) ) then 
+         dr(1:3)=shelli(1:3)-shellj(1:3)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Ess, inxnpqeq(ity, jty), TBL_Eclmb_pss,sf)
+
+         ff(1:3)=Cclmb0*sf(1:3)*Zpqeq(ity)*Zpqeq(jty)
+         sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
+         sforce(j,1:3)=sforce(j,1:3)+ff(1:3) !reaction force on shell-j
+      endif
+
+   enddo
+
+enddo
+
+!print *,"before shell update"
+call COPYATOMS(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+!print *,"after shell update"
+
+!--- update shell positions after finishing the shell-force calculation.  Eq. (39)
+do i=1, NATOMS
+   ity = nint(atype(i))
+   if( isPolarizable(ity) ) spos(i,1:3) = spos(i,1:3) + sforce(i,1:3)/Kspqeq(ity)
+enddo
+
+
+end subroutine
+
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine qeq_initialize()
@@ -585,10 +672,11 @@ do i=1, NATOMS + na/ne
 
 !--- core-i/core-j
       Ccicj = hessian_sc(j1,i)
+      Ccicj = Ccicj*qic*qjc  !core i-j full
       !dr(1:3)=pos(i,1:3)-pos(j,1:3)
       !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
+      !Ccicj = 0.5d0*Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
       !Ccicj = Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
-      Ccicj = Ccicj*qic*qjc  !core i-j full
       !Ccicj = Ccicj*Zpqeq(ity)*Zpqeq(jty)  !core i-j full
       !print '(a10,es25.15)',"Ccicj:",Ccicj
 

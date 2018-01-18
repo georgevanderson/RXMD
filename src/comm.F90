@@ -48,7 +48,11 @@ call system_clock(tti,tk)
 !--- How many atom coords need to be normalized depends on who calls this.
 !--- For example function calls during QEq (MODE_QCOPY1 & MODE_QCOPY2) assume
 !--- atom information of the extended domain regions. 
-call xu2xs(rreal,pos,max(NATOMS,copyptr(6)))
+if (imode == MODE_COPY_SC) then
+   call xu2xs(rreal,pos,max(NATOMS,copyptr_sc(5)))
+else
+   call xu2xs(rreal,pos,max(NATOMS,copyptr(6)))
+endif
 
 !--- clear total # of copied atoms, sent atoms, recieved atoms
 na=0;ns=0;nr=0
@@ -76,6 +80,12 @@ select case(imode)
       ne = NE_QCOPY1
    case(MODE_QCOPY2)
       ne = NE_QCOPY2
+   case(MODE_COPY_SC)
+      ne = NE_COPY_SC
+   case(MODE_CPBK_SC)
+      ne = NE_CPBK
+   case(MODE_CPBKSHELL_SC)
+      ne = NE_CPBK
    case(MODE_QCOPY1_SC)
       ne = NE_QCOPY1_SC
    case(MODE_QCOPY2_SC)
@@ -98,7 +108,9 @@ do dflag=1, 6
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
  
-   elseif(imode==MODE_CPHSH_SC .or. imode==MODE_CPGSGT_SC) then  ! communicate with neighbors in +direction in reversed order
+   ! communicate with neighbors in +direction in reversed order
+   elseif(imode == MODE_CPBKSHELL_SC .or. imode == MODE_CPBK_SC .or. imode==MODE_CPHSH_SC &
+           .or. imode==MODE_CPGSGT_SC) then  
       if (MOD(dflag,2) == 0) then
          cycle
       endif
@@ -106,8 +118,9 @@ do dflag=1, 6
       tn2 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
    
-   elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC) then ! for SC, communicate only x+,y+, and z+
+   elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC .or. imode==MODE_COPY_SC) then ! for SC, communicate only x+,y+, and z+
       if (MOD(dflag,2) == 0) then
+         copyptr_sc(dflag) = copyptr_sc(dflag-1)
          cycle
       endif
    endif
@@ -159,7 +172,7 @@ endif
 
 !--- by here, we got new atom positions in the normalized coordinate, need to update real coordinates.
 if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(pos,rreal,copyptr(6))
-
+if(imode== MODE_COPY_SC) call xs2xu(pos,rreal,copyptr_sc(5))
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   ni=nstep/pstep+1
@@ -264,11 +277,12 @@ ns=0
 cptridx=((dflag-1)/2)*2 ! <- [002244]
 
 
-if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) then
+if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC .and. imode/=MODE_CPBK_SC &
+   .and. imode /= MODE_CPBKSHELL_SC ) then
 
 !--- # of elements to be sent. should be more than enough. 
    ni = copyptr(cptridx)*ne
-   if (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
+   if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
       ni = copyptr_sc(cptridx)*ne
    endif
 !--- <sbuffer> will deallocated in store_atoms.
@@ -282,18 +296,17 @@ if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) t
    sft=xshift(dflag)
 
 !--- determine the last copy index for either SC or normal communication
-   if (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
+   if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
       if (cptridx > 0) cptridx = cptridx - 1   !<- [013] For SC
       copyptr_last = copyptr_sc(cptridx)
    else
       copyptr_last = copyptr(cptridx)
    endif
-
 !--- start buffering data depending on modes. all copy&move modes use buffer size, dr, to select atoms.
    do n=1, copyptr_last
 
       if(inBuffer(dflag,n,dr)) then
-
+      
         select case(imode)
         case(MODE_MOVE)
            sbuffer(ns+1:ns+3) = pos(n,1:3)
@@ -331,10 +344,23 @@ if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) t
            sbuffer(ns+2) = ht(n)
            sbuffer(ns+3) = q(n)
 
+        case(MODE_COPY_SC)
+           sbuffer(ns+1:ns+3) = pos(n,1:3)
+           sbuffer(ns+1+is) = sbuffer(ns+1+is) + sft
+           sbuffer(ns+4) = atype(n)
+           sbuffer(ns+5) = q(n)
+           sbuffer(ns+6) = dble(n)
+           sbuffer(ns+7) = qs(n)
+           sbuffer(ns+8) = qt(n)
+           sbuffer(ns+9) = hs(n)
+           sbuffer(ns+10) = ht(n)
+           sbuffer(ns+11) = fpqeq(n)
+           sbuffer(ns+12:ns+14) = spos(n,1:3)
+
         case(MODE_QCOPY1_SC)
            sbuffer(ns+1) = qs(n)
            sbuffer(ns+2) = qt(n)
-           sbuffer(ns+3) = fpqeq(n)
+           sbuffer(ns+3) = dble(n)
 
         case(MODE_QCOPY2_SC)
            sbuffer(ns+1) = hs(n)
@@ -366,6 +392,57 @@ else if(imode==MODE_CPBK) then
       ns=ns+ne
    enddo
 !=========================================================== FORCE COPYBACK MODE ====
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode==MODE_CPBK_SC) then
+!   print *, "storing hshs and hsht"
+!   is = 7 - dflag !<- [654321] reversed order direction flag
+!   is = 7 - dflag !<- [531] reversed order direction flag
+   is = 6 - dflag !<- [531] reversed order direction flag
+   is_prior = cptridx_ind_sc(is)
+
+#ifdef MATT_COMM_DEBUG
+   print '(a,3i5)',"Start MODE_CPHSH_SC: is, is-2, dflag:", is, is-2,dflag
+#endif
+
+   !n = copyptr_sc(is) - copyptr_sc(is-2) + 1
+   n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
+   call CheckSizeThenReallocate(sbuffer,n*ne)
+
+   !do n=copyptr_sc(is-2)+1, copyptr_sc(is)
+   do n=copyptr_sc(is_prior)+1, copyptr_sc(is)
+      sbuffer(ns+1) = dble(scindx(n))
+      sbuffer(ns+2:ns+4) = f(n,1:3)
+!--- chenge index to point next atom.
+      ns=ns+ne
+   enddo
+!=========================================================== FORCE COPYBACK MODE ====
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode==MODE_CPBKSHELL_SC) then
+!   print *, "storing hshs and hsht"
+!   is = 7 - dflag !<- [654321] reversed order direction flag
+!   is = 7 - dflag !<- [531] reversed order direction flag
+   is = 6 - dflag !<- [531] reversed order direction flag
+   is_prior = cptridx_ind_sc(is)
+
+#ifdef MATT_COMM_DEBUG
+   print '(a,3i5)',"Start MODE_CPHSH_SC: is, is-2, dflag:", is, is-2,dflag
+#endif
+
+   !n = copyptr_sc(is) - copyptr_sc(is-2) + 1
+   n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
+   call CheckSizeThenReallocate(sbuffer,n*ne)
+
+   !do n=copyptr_sc(is-2)+1, copyptr_sc(is)
+   do n=copyptr_sc(is_prior)+1, copyptr_sc(is)
+      sbuffer(ns+1) = dble(scindx(n))
+      sbuffer(ns+2:ns+4) = sforce(n,1:3)
+!--- chenge index to point next atom.
+      ns=ns+ne
+   enddo
+!=========================================================== FORCE COPYBACK MODE ====
+
 
 
 !===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
@@ -468,7 +545,8 @@ if( (na+nr)/ne > NBUFFER) then
     stop
 endif
 
-if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) then
+if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC .and. imode/=MODE_CPBK_SC &
+    .and. imode /=MODE_CPBKSHELL_SC) then
 
 !--- go over the buffered atom
    do i=0, nr/ne-1
@@ -501,7 +579,19 @@ if(imode/=MODE_CPBK .and. imode /=MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) t
               hs(m) = rbuffer(ine+9)
               ht(m) = rbuffer(ine+10)
               spos(m,1:3) = rbuffer(ine+11:ine+13)
-      
+ 
+         case(MODE_COPY_SC)
+              pos(m,1:3) = rbuffer(ine+1:ine+3)
+              atype(m) = rbuffer(ine+4)
+              q(m)  = rbuffer(ine+5)
+              frcindx(m) = nint(rbuffer(ine+6))
+              qs(m) = rbuffer(ine+7)
+              qt(m) = rbuffer(ine+8)
+              hs(m) = rbuffer(ine+9)
+              ht(m) = rbuffer(ine+10)
+              fpqeq(m) = rbuffer(ine+11)
+              spos(m,1:3) = rbuffer(ine+12:ine+14)
+           
            case(MODE_QCOPY1)
               qs(m) = rbuffer(ine+1)
               qt(m) = rbuffer(ine+2)
@@ -540,6 +630,31 @@ else if(imode == MODE_CPBK) then
 !============================================================== FORCE COPYBACK MODE  ===
 
 !===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode == MODE_CPBKSHELL_SC) then
+!   print *, "adding hshs and hsht"
+   do i=0, nr/ne-1
+!--- get current index <ine> in <rbuffer(1:nr)>.
+      ine=i*ne
+!--- Append the transferred forces into the original position of force array.
+      m = nint(rbuffer(ine+1))
+      sforce(m,1:3) = sforce(m,1:3) + rbuffer(ine+2:ine+4)
+   enddo
+
+
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
+else if(imode == MODE_CPBK_SC) then
+!   print *, "adding hshs and hsht"
+   do i=0, nr/ne-1
+!--- get current index <ine> in <rbuffer(1:nr)>.
+      ine=i*ne
+!--- Append the transferred forces into the original position of force array.
+      m = nint(rbuffer(ine+1))
+      f(m,1:3) = f(m,1:3) + rbuffer(ine+2:ine+4)
+   enddo
+
+
+!===== HSH COPYBACK MODE for SC algorithm of PQeQ==========================
 else if(imode == MODE_CPHSH_SC) then
 !   print *, "adding hshs and hsht"
    do i=0, nr/ne-1
@@ -565,10 +680,6 @@ else if(imode == MODE_CPGSGT_SC) then
       m = nint(rbuffer(ine+1))
       gssum(m) = gssum(m) + rbuffer(ine+2)
       gtsum(m) = gtsum(m) + rbuffer(ine+3)
-#ifdef MATT_COMM_DEBUG
-      print '(a,2i6,6es15.5)',"m,i,hshs(m)_before,hshs(m)_after:",m,i,hshs(m)-rbuffer(ine+2) &
-            ,hshs(m),hsht(m)-rbuffer(ine+3),hsht(m),rbuffer(ine+2:ine+3)
-#endif
    enddo
 
 
@@ -579,14 +690,16 @@ endif
 
 !--- store the last transfered atom index to <dflag> direction.
 !--- if no data have been received, use the index of previous direction.
-if(imode /= MODE_CPBK .and. imode /= MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC) then
-  if(nr==0 .and. (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC)) then
+if(imode /= MODE_CPBK .and. imode /= MODE_CPHSH_SC .and. imode /= MODE_CPGSGT_SC .and. imode /= MODE_CPBK_SC & 
+     .and. imode /= MODE_CPBKSHELL_SC) then
+  if(nr==0 .and. (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC .or. imode == MODE_COPY_SC)) then
+     print '(a,2i5)',"imode, dflag:",imode,dflag
      m = copyptr_sc(dflag-2)
   elseif(nr==0) then 
      m = copyptr(dflag-1)
   endif
 
-  if (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then !update copyptr for sc communication (e.g. 3-ways only)
+  if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then !update copyptr for sc communication (e.g. 3-ways only)
      copyptr_sc(dflag) = m
   else
      copyptr(dflag) = m !update copyptr for 6-way communication

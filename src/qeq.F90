@@ -313,7 +313,7 @@ real(8),intent(OUT) :: Gnew(2)
 real(8) :: eta_ity, ggnew(2)
 integer :: i,j,j1, ity
 
-real(8) :: gssum, gtsum
+real(8) :: lgssum, lgtsum
 
 integer :: ti,tj,tk
 call system_clock(ti,tk)
@@ -321,19 +321,19 @@ call system_clock(ti,tk)
 !$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
 do i=1,NATOMS
 
-   gssum=0.d0
-   gtsum=0.d0
+   lgssum=0.d0
+   lgtsum=0.d0
    do j1=1, nbplist(i,0) 
       j = nbplist(i,j1)
-      gssum = gssum + hessian(j1,i)*qs(j)
-      gtsum = gtsum + hessian(j1,i)*qt(j)
+      lgssum = lgssum + hessian(j1,i)*qs(j)
+      lgtsum = lgtsum + hessian(j1,i)*qt(j)
    enddo
 
    ity = nint(atype(i))
    eta_ity = eta(ity)
 
-   gs(i) = - chi(ity) - eta_ity*qs(i) - gssum
-   gt(i) = - 1.d0     - eta_ity*qt(i) - gtsum
+   gs(i) = - chi(ity) - eta_ity*qs(i) - lgssum
+   gt(i) = - 1.d0     - eta_ity*qt(i) - lgtsum
 
 enddo 
 !$omp end parallel do
