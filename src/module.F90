@@ -108,25 +108,27 @@ real(8),allocatable :: sbuffer(:), rbuffer(:)
 integer :: ns, nr, na, ne
 
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
-integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = 3
+integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = -3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
-integer,parameter :: MODE_COPY_SC = 6   !for PQeQ using SC algorithm
-integer,parameter :: MODE_QCOPY1_SC = 7   !for PQeQ using SC algorithm
-integer,parameter :: MODE_QCOPY2_SC = 8   !for PQeQ using SC algorithm
-integer,parameter :: MODE_CPBK_SC = 9   !for PQeQ using SC algorithm
-integer,parameter :: MODE_CPHSH_SC = 10  !for PQeQ using SC algorithm
-integer,parameter :: MODE_CPGSGT_SC = 11   !for PQeQ using SC algorithm
-integer,parameter :: MODE_CPBKSHELL_SC = 12   !for PQeQ using SC algorithm
+integer,parameter :: MODE_COPY_SC = 50006   !for PQeQ using SC algorithm
+integer,parameter :: MODE_QCOPY1_SC = 50007   !for PQeQ using SC algorithm
+integer,parameter :: MODE_QCOPY2_SC = 50008   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPBK_SC = -50009   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPHSH_SC = -50010  !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPGSGT_SC = -50011   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPBKSHELL_SC = -50012   !for PQeQ using SC algorithm
+integer,parameter :: MODE_CPFPQEQ_SC = -50013   !for PQeQ using SC algorithm
 
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
-integer,parameter :: NE_COPY_SC = 14
-integer,parameter :: NE_QCOPY1_SC = 3
+integer,parameter :: NE_COPY_SC = 13
+integer,parameter :: NE_QCOPY1_SC = 4
 integer,parameter :: NE_QCOPY2_SC = 4
 
 integer,parameter :: NE_CPBK = 4
 integer,parameter :: NE_CPHSH_SC = 3
 integer,parameter :: NE_CPGSGT_SC = 3
+integer,parameter :: NE_CPFPQEQ_SC = 2
 
 real(8),allocatable :: fpqeq(:) !fpqeq become global variable for SC algorithm
 

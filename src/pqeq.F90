@@ -107,8 +107,8 @@ enddo
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
-call get_gradient(Gnew)
+call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+call get_gradient_sc(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
 hs(1:NATOMS) = gs(1:NATOMS)
@@ -134,7 +134,7 @@ do i=1, NATOMS
       write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
-print '(a10,2es25.15)', "before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
+print '(a20,2es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 #endif
   call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
@@ -148,11 +148,11 @@ do i=1, NATOMS
       write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
-print '(a10,2es25.15)', "after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
+print '(a20,2es25.15)', "(hshs,hsht) after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 #endif
 
 #ifdef QEQDUMP
-  if(myid==0) print'(i5,5es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, gqsum
+  if(myid==0) print'(i5,6es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, GEst1-GEst2, gqsum
 #endif
   if( ( 0.5d0*( abs(GEst2) + abs(GEst1) ) < QEq_tol) ) exit 
   if( abs(GEst2) > 0.d0 .and. (abs(GEst1/GEst2-1.d0) < QEq_tol) ) exit
@@ -319,7 +319,7 @@ do i=1, NATOMS + na/ne
 
    if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
 
-   !core-i shell-i interaction
+   !core-i shell-i interaction for resident atoms
    if( isPolarizable(ity) .and. i <= NATOMS ) then
       sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
    endif
@@ -350,7 +350,7 @@ do i=1, NATOMS + na/ne
          dr(1:3)=shellj(1:3)-pos(i,1:3)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Esc, inxnpqeq(jty, ity), TBL_Eclmb_psc,sf)
 
-         ff(1:3)=-Cclmb0*sf(1:3)*qic*Zpqeq(ity)
+         ff(1:3)=-Cclmb0*sf(1:3)*qic*Zpqeq(jty)
          sforce(j,1:3)=sforce(j,1:3)-ff(1:3)
       endif
 
@@ -405,6 +405,9 @@ call system_clock(ti,tk)
 
 nbplist(:,0) = 0
 nbplist_sc(:,0) = 0
+fpqeq(:) = 0.d0
+
+#if 1
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,c4,c5,c6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
@@ -489,6 +492,8 @@ enddo; enddo; enddo
 !$omp end parallel do
 
 
+#endif
+
 !--- MATT TO DO-----------------------------
 !--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
 !--- Determine NT interaction 
@@ -497,11 +502,6 @@ enddo; enddo; enddo
 do c1=0, nbcc(1)-1
 do c2=0, nbcc(2)-1
 do c3=0, nbcc(3)-1
-
-#if MATT_DEBUG > 1
-          print *,"-------------------------------------------"
-          print '(a,i4,i4,i4)',"c:",c1,c2,c3
-#endif
 
 do mn = 1, nbnmesh_sc
 
@@ -558,19 +558,29 @@ do mn = 1, nbnmesh_sc
 !--- PEQq : 
             ! contribution from core(i)-core(j)
             call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
-
             hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
 
 
-            !fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
+            fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
+            fpqeq(j) = fpqeq(j) + Cclmb0_qeq * pqeqc * Zpqeq(ity) ! Eq. 30
 
             ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
-            !if( isPolarizable(jty) ) then 
-            !   dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
-            !   call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
+            if( isPolarizable(jty) ) then 
+               dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+               call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
 
-               !fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
+               fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
             endif
+
+            if( isPolarizable(ity) ) then 
+               dr(1:3)=pos(j,1:3) - pos(i,1:3) - spos(i,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+               call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),pqeqs,inxnpqeq(ity, jty),TBL_Eclmb_psc,ff)
+
+               fpqeq(j) = fpqeq(j) - Cclmb0_qeq * pqeqs * Zpqeq(ity) ! Eq. 30
+            endif
+
+          endif
+          
           endif
 
          j=nbllist(j)
@@ -581,6 +591,10 @@ do mn = 1, nbnmesh_sc
    enddo !do mn = nbmesh_sc
 enddo; enddo; enddo
 !$omp end parallel do
+
+
+call COPYATOMS(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+
 
 !-------END MATT----------------------------
 
@@ -644,8 +658,8 @@ do i=1, NATOMS + na/ne
 
    !avoid hshs and hsht double counting by compute only for resident atoms
    if (i <= NATOMS) then
-      hshs(i) = eta_ity*hs(i)
-      hsht(i) = eta_ity*ht(i)
+      hshs(i) = hshs(i) + eta_ity*hs(i)
+      hsht(i) = hsht(i) + eta_ity*ht(i)
    endif
 
 !--- for PQEq
