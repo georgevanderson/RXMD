@@ -134,10 +134,21 @@ do i=1, NATOMS
       write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
-print '(a20,2es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
+
 #endif
+
+#ifdef DEBUG_CPBK
+print '(a20,4es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
+      sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
+
+#endif
+
   call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
+#ifdef DEBUG_CPBK
+print '(a20,4es25.15)', "(hshs,hsht) after ", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
+      sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
+#endif
 
   call MPI_ALLREDUCE(Est, GEst1, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
@@ -148,7 +159,6 @@ do i=1, NATOMS
       write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
    !enddo
 enddo
-print '(a20,2es25.15)', "(hshs,hsht) after", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS))
 #endif
 
 #ifdef QEQDUMP
@@ -369,7 +379,15 @@ do i=1, NATOMS + na/ne
 enddo
 
 !print *,"before shell update"
+#ifdef DEBUG_CPBK
+print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,:))
+#endif
+
 call COPYATOMS(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+
+#ifdef DEBUG_CPBK
+print '(a20,3es25.15)', "(sforce) after", sum(sforce(1:NATOMS,:))
+#endif
 !print *,"after shell update"
 
 !--- update shell positions after finishing the shell-force calculation.  Eq. (39)
@@ -407,7 +425,7 @@ nbplist(:,0) = 0
 nbplist_sc(:,0) = 0
 fpqeq(:) = 0.d0
 
-#if 1
+#if 0
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,c4,c5,c6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
@@ -420,7 +438,7 @@ do c3=0, nbcc(3)-1
 
    ity=nint(atype(i))
 
-   fpqeq(i)=0.d0
+   !fpqeq(i)=0.d0
 
    do mn = 1, nbnmesh
       c4 = c1 + nbmesh(1,mn)
@@ -497,6 +515,9 @@ enddo; enddo; enddo
 !--- MATT TO DO-----------------------------
 !--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
 !--- Determine NT interaction 
+print '(a,2i10)', "NATOMS,na/ne:",NATOMS, na/ne
+print '(a,3i10)', "nbcc(:):",nbcc(:)
+
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
 do c1=0, nbcc(1)-1
@@ -512,6 +533,7 @@ do mn = 1, nbnmesh_sc
    ci5 = c2+nbmesh_sc(2,mn,2)
    ci6 = c3+nbmesh_sc(3,mn,2)
 
+!print '(a,9i5)',"c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6:",c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6
 !--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
 !--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
 !   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
@@ -536,12 +558,21 @@ do mn = 1, nbnmesh_sc
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
 
+            if ((j > NATOMS)) then 
+               print '(a,2i6)',"(i,j)J>NATOMS:",i,j
+            if (i > NATOMS) then 
+               print '(a,2i6)',"(i,j)I,J>NATOMS:",i,j
+            endif
+            endif
+
          !if(i/=j) then
          !compute only atoms in the same cell
-         if(nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6) .or. (i<j)) then
+         if((nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6)) .or. (i<j)) then
             dr(1:3) = pos(i,1:3) - pos(j,1:3)
             dr2 =  sum(dr(1:3)*dr(1:3))
 
+            !print '(a,2i6,2es15.5)',"(i,j,dist,rctap2):",i,j,dr2,rctap2
+            
             if(dr2 < rctap2) then
 
                jty = nint(atype(j))
@@ -579,9 +610,9 @@ do mn = 1, nbnmesh_sc
                fpqeq(j) = fpqeq(j) - Cclmb0_qeq * pqeqs * Zpqeq(ity) ! Eq. 30
             endif
 
-          endif
+          endif !dr2 < rctap2
           
-          endif
+          endif !(nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6)) .or. (i<j)
 
          j=nbllist(j)
          enddo !loop atom in cell j
@@ -593,8 +624,14 @@ enddo; enddo; enddo
 !$omp end parallel do
 
 
+#ifdef DEBUG_CPBK
+print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
+#endif
 call COPYATOMS(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
+#ifdef DEBUG_CPBK
+print '(a20,2es25.15)', "(fpqeq) after ", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
+#endif
 
 !-------END MATT----------------------------
 
@@ -620,9 +657,10 @@ endif
 !   enddo
 !enddo
 
-
+print *,"*******************************************"
 print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
 print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
+print *,"*******************************************"
 #endif
 
 call system_clock(tj,tk)
@@ -873,7 +911,15 @@ do i=1,NATOMS + na/ne
 enddo 
 !$omp end parallel do
 
+#ifdef DEBUG_CPBK
+print '(a20,2es25.15)', "(gssum,gtsum) before", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
+#endif
+
 call COPYATOMS(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+
+#ifdef DEBUG_CPBK
+print '(a20,2es25.15)', "(gssum,gtsum) after ", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
+#endif
 
 do i=1,NATOMS
 

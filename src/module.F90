@@ -108,6 +108,9 @@ real(8),allocatable :: sbuffer(:), rbuffer(:)
 integer :: ns, nr, na, ne
 
 !<NE_COPY>,<NE_MOVE>,<NE_CPBK> :: Number of Elements to COPY, MOVE atoms and CoPy BacK force. 
+!MODE SC, abs(imode) > MODE_SC
+!MODE COPYBACK, imode < 0
+integer,parameter :: MODE_SC = 50000   !for PQeQ using SC algorithm
 integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = -3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
 integer,parameter :: MODE_COPY_SC = 50006   !for PQeQ using SC algorithm
