@@ -67,6 +67,7 @@ end select
 
 #ifdef QEQDUMP 
 open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
+open(95,file="qdump"//trim(rankToString(myid))//".txt")
 open(94,file="pqeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
@@ -75,13 +76,14 @@ open(92,file="pqeqdump_before"//trim(rankToString(myid))//".txt")
 open(93,file="pqeqdump_after"//trim(rankToString(myid))//".txt")
 #endif
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-call COPYATOMS(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
 
 #ifdef QEQDUMP 
 do i=1, NATOMS
+   write(95,'(i10,es25.15)') i,q(i)
    do j1=1,nbplist(i,0)
       j = nbplist(i,j1)
       !write(91,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian(j1,i)
@@ -105,16 +107,16 @@ do i=1, NATOMS + na/ne
 enddo
 #endif
 
-!--- after the initialization, only the normalized coords are necessary for COPYATOMS()
+!--- after the initialization, only the normalized coords are necessary for COPYATOMS_SC()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 call get_gradient_sc(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
 hs(1:NATOMS) = gs(1:NATOMS)
 ht(1:NATOMS) = gt(1:NATOMS)
 
-call COPYATOMS(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -142,7 +144,7 @@ print '(a20,4es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NA
       sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
 #endif
 
-  call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS_SC(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
 print '(a20,4es25.15)', "(hshs,hsht) after ", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
@@ -203,7 +205,11 @@ enddo
   q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
 !--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+
+#ifdef DEBUG_CPBK
+print '(a20,1es25.15)', "(q)",sum(q(1:NATOMS))
+#endif
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -215,7 +221,7 @@ enddo
   ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
 
 !--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call COPYATOMS_SC(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 enddo
 
@@ -231,6 +237,7 @@ it_timer(24)=it_timer(24)+nstep_qeq
 
 #ifdef QEQDUMP 
 close(91)
+close(95)
 #endif
 
 #ifdef PQEQDUMP 
@@ -312,7 +319,7 @@ implicit none
 integer :: i,ity,j,jty,j1,inxn
 real(8) :: shelli(3),shellj(3), qic, qjc, clmb, dclmb, dr2
 !real(8) :: sforce(NATOMS,3), sf(3), Esc, Ess
-real(8) :: sf(3), Esc, Ess
+real(8) :: sf(3), Esci, Escj, Ess
 real(8) :: ff(3)
 
 real(8) :: dr(3)
@@ -348,7 +355,7 @@ do i=1, NATOMS + na/ne
       ! there will be force on i-shell from j-core.  qjc takes care of the difference.  Eq. (38)
       if( isPolarizable(ity) ) then
          dr(1:3)=shelli(1:3)-pos(j,1:3)
-         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Esc, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Escj, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
 
          ff(1:3)=-Cclmb0*sf(1:3)*qjc*Zpqeq(ity)
          sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
@@ -357,14 +364,14 @@ do i=1, NATOMS + na/ne
       ! there will be force on j-shell from i-core.  qjc takes care of the difference.  Eq. (38)
       if( isPolarizable(jty) ) then
          dr(1:3)=shellj(1:3)-pos(i,1:3)
-         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Esc, inxnpqeq(jty, ity), TBL_Eclmb_psc,sf)
+         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Esci, inxnpqeq(jty, ity), TBL_Eclmb_psc,sf)
 
          ff(1:3)=-Cclmb0*sf(1:3)*qic*Zpqeq(jty)
          sforce(j,1:3)=sforce(j,1:3)-ff(1:3)
       endif
 
       ! if j-atom is polarizable, there will be force on i-shell from j-shell. Eq. (38)
-      if(  isPolarizable(jty) .and. isPolarizable(jty) ) then 
+      if(  isPolarizable(ity) .and. isPolarizable(jty) ) then 
          dr(1:3)=shelli(1:3)-shellj(1:3)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Ess, inxnpqeq(ity, jty), TBL_Eclmb_pss,sf)
 
@@ -382,7 +389,7 @@ enddo
 print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 
-call COPYATOMS(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
 print '(a20,3es25.15)', "(sforce) after", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
@@ -514,8 +521,8 @@ enddo; enddo; enddo
 !--- MATT TO DO-----------------------------
 !--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
 !--- Determine NT interaction 
-print '(a,2i10)', "NATOMS,na/ne:",NATOMS, na/ne
-print '(a,3i10)', "nbcc(:):",nbcc(:)
+!print '(a,2i10)', "NATOMS,na/ne:",NATOMS, na/ne
+!print '(a,3i10)', "nbcc(:):",nbcc(:)
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
@@ -626,7 +633,7 @@ enddo; enddo; enddo
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
 #endif
-call COPYATOMS(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(fpqeq) after ", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
@@ -662,10 +669,6 @@ print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
 print *,"*******************************************"
 #endif
 
-print *,"*******************************************"
-print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
-print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
-print *,"*******************************************"
 
 call system_clock(tj,tk)
 it_timer(16)=it_timer(16)+(tj-ti)
@@ -921,7 +924,7 @@ enddo
 print '(a20,2es25.15)', "(gssum,gtsum) before", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
 #endif
 
-call COPYATOMS(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
+call COPYATOMS_SC(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(gssum,gtsum) after ", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
