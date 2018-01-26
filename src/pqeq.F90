@@ -326,10 +326,10 @@ do i=1, NATOMS + na/ne
    ! if i-atom is not polarizable, no force acting on i-shell. 
    !if( .not. isPolarizable(ity) ) cycle 
 
-   if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
 
    !core-i shell-i interaction for resident atoms
    if( isPolarizable(ity) .and. i <= NATOMS ) then
+      if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
       sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
    endif
 
@@ -379,13 +379,13 @@ enddo
 
 !print *,"before shell update"
 #ifdef DEBUG_CPBK
-print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,:))
+print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 
 call COPYATOMS(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,3es25.15)', "(sforce) after", sum(sforce(1:NATOMS,:))
+print '(a20,3es25.15)', "(sforce) after", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 !print *,"after shell update"
 
@@ -625,7 +625,6 @@ enddo; enddo; enddo
 
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
-      Est = Est + 0.5d0*Est1
 #endif
 call COPYATOMS(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
