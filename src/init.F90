@@ -623,7 +623,8 @@ do mn = 1, nbnmesh
    endif
 
    do i = 1,3 !find cell shift vector
-      if (c2(i) < 0) then
+      !if (c2(i) < 0) then !for positive shift vector
+      if (c2(i) > 0) then !for negative shift vector
          shift_v(i) = -c2(i)
       endif
    enddo

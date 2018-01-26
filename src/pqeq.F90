@@ -140,7 +140,6 @@ enddo
 #ifdef DEBUG_CPBK
 print '(a20,4es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
       sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
-
 #endif
 
   call COPYATOMS(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
@@ -558,12 +557,12 @@ do mn = 1, nbnmesh_sc
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
 
-            if ((j > NATOMS)) then 
-               print '(a,2i6)',"(i,j)J>NATOMS:",i,j
-            if (i > NATOMS) then 
-               print '(a,2i6)',"(i,j)I,J>NATOMS:",i,j
-            endif
-            endif
+            !if ((j > NATOMS)) then 
+            !   print '(a,2i6)',"(i,j)J>NATOMS:",i,j
+            !if (i > NATOMS) then 
+            !   print '(a,2i6)',"(i,j)I,J>NATOMS:",i,j
+            !endif
+            !endif
 
          !if(i/=j) then
          !compute only atoms in the same cell
@@ -626,6 +625,7 @@ enddo; enddo; enddo
 
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
+      Est = Est + 0.5d0*Est1
 #endif
 call COPYATOMS(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
@@ -662,6 +662,11 @@ print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
 print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
 print *,"*******************************************"
 #endif
+
+print *,"*******************************************"
+print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
+print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
+print *,"*******************************************"
 
 call system_clock(tj,tk)
 it_timer(16)=it_timer(16)+(tj-ti)
@@ -704,7 +709,8 @@ do i=1, NATOMS + na/ne
    qic = q(i) + Zpqeq(ity)
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
 
-   !dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
+   !can be removed?
+   dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
 
    !avoid Est q(i)*q(i) double counting. Only do this for resident atoms
    if (i <= NATOMS) then
@@ -773,6 +779,7 @@ do i=1, NATOMS + na/ne
 
 !--- In FS PQeQ, get half of potential energy, then sum it up if atoms are resident.
 !--- But in SC PQeQ, get full potential energy (no duplicate atom pair) and sum up all atoms including cached atoms.
+      !Est1 = 2.d0*Ccicj + Csicj + Csjci + 2.d0*Csisj
       Est1 = Ccicj + Csicj + Csjci + Csisj
       
       !if (i < j) then  
