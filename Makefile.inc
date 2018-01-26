@@ -5,7 +5,7 @@
 
 %.o: %.mod
 
-SRCS := cg.F90 pot.F90 fileio.F90 comm.F90 init.F90 bo.F90 qeq.F90 param.F90 main.F90 pqeq.F90
+SRCS := cg.F90 pot.F90 fileio.F90 comm.F90 comm_sc.F90 init.F90 bo.F90 qeq.F90 param.F90 main.F90 pqeq.F90
 OBJS := $(SRCS:.F90=.o)
 
 EXE := rxmd
@@ -18,6 +18,7 @@ EXE := rxmd
 #FC = mpif90 -check all -traceback
 
 # gfortran
+#FC = mpif90 -O3 -ffast-math
 FC = mpif90 -O3 -ffast-math
 #FC = mpif90 -fopenmp -O3 -ffast-math
 #FC = mpif90 -fcheck=all -g
@@ -33,4 +34,10 @@ FC = mpif90 -O3 -ffast-math
 #OPT = -O3 -qhot=level=0 -qimd=auto
 #LDFLAGS = -L/soft/perftools/hpctw -lmpihpm -L/soft/perftools/bgpm/lib -lbgpm 
 
-CPP :=
+#CPP :=
+CPP := -DQEQDUMP
+#CPP := -DQEQDUMP -DDEBUG_CPBK 
+#CPP := -DQEQDUMP -DDEBUG_CPBK -DMATT_DEBUG
+#CPP := -DQEQDUMP -DMATT_DEBUG -DPQEQDUMP
+#CPP := -DQEQDUMP -DMATT_DEBUG
+#CPP := -DQEQDUMP
