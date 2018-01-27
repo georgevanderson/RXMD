@@ -732,7 +732,7 @@ do i=1, NATOMS + na/ne
 
 !--- core-i/core-j
       Ccicj = hessian_sc(j1,i)
-      Ccicj = Ccicj*qic*qjc  !core i-j full
+      Ccicj = Ccicj*qic*qjc*0.5d0  !core i-j full
       !dr(1:3)=pos(i,1:3)-pos(j,1:3)
       !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
       !Ccicj = 0.5d0*Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
