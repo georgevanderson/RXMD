@@ -726,7 +726,7 @@ do i=1, NATOMS + na/ne
       !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)) + Eshell
       !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
       !Est = Est + CEchage*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
-      Est = Est + chi(ity)*q(i) + eta_ity*q(i)*q(i)
+      Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
    endif
 
    do j1 = 1, nbplist_sc(i,0)
