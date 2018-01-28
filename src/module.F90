@@ -125,7 +125,7 @@ integer,parameter :: MODE_CPFPQEQ_SC = -50013   !for PQeQ using SC algorithm
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
 integer,parameter :: NE_COPY_SC = 13
-integer,parameter :: NE_QCOPY1_SC = 3
+integer,parameter :: NE_QCOPY1_SC = 2
 integer,parameter :: NE_QCOPY2_SC = 3
 
 integer,parameter :: NE_CPBK = 4

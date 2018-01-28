@@ -712,12 +712,21 @@ do i=1, NATOMS + na/ne
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
 
    !can be removed?
-   dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
+   !dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
 
    !avoid Est q(i)*q(i) double counting. Only do this for resident atoms
    if (i <= NATOMS) then
-      Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
-      !Est = Est + chi(ity)*q(i) + eta_ity*q(i)*q(i)
+
+      !Eshell = 0.d0
+      !if(isPolarizable(ity)) then
+      !   dr2 = sum( spos(i,1:3)*spos(i,1:3) )
+      !   Eshell = 0.5d0*Kspqeq(ity)*dr2
+      !endif
+
+      !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)) + Eshell
+      !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
+      !Est = Est + CEchage*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
+      Est = Est + chi(ity)*q(i) + eta_ity*q(i)*q(i)
    endif
 
    do j1 = 1, nbplist_sc(i,0)
@@ -731,8 +740,10 @@ do i=1, NATOMS + na/ne
       Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0; Csjci=0.d0
 
 !--- core-i/core-j
-      Ccicj = hessian_sc(j1,i)
-      Ccicj = Ccicj*qic*qjc*0.5d0  !core i-j full
+      !Ccicj = hessian_sc(j1,i)*qic*qjc
+      !Ccicj = Ccicj*qic*qjc  !core i-j full
+      Ccicj = hessian_sc(j1,i)*qic*qjc  !core i-j full
+      !Ccicj = Ccicj*qic*qjc*0.5d0  !core i-j full
       !dr(1:3)=pos(i,1:3)-pos(j,1:3)
       !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
       !Ccicj = 0.5d0*Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
@@ -746,8 +757,8 @@ do i=1, NATOMS + na/ne
          !print '(a10,6es25.15)',"dist:",shelli(:),pos(j,:)
          !print '(a10,3es25.15)',"dr:",dr(:)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csicj,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
-         Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
-         !print '(a10,es25.15)',"Csicj:",Csicj
+         !Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
+         Csicj=-Cclmb0_qeq*Csicj*qjc*Zpqeq(ity)
       endif
        
       !--- core-i/shell-j
@@ -757,8 +768,8 @@ do i=1, NATOMS + na/ne
          !print '(a10,3es25.15)',"dr:",dr(:)
          !call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
-         Csjci=-Cclmb0_qeq*Csjci*qjc*Zpqeq(ity)
-         !print '(a10,es25.15)',"Csjci:",Csjci
+         !Csjci=-Cclmb0_qeq*Csjci*qjc*Zpqeq(ity)
+         Csjci=-Cclmb0_qeq*Csjci*qic*Zpqeq(jty)
       endif
 
          !--- shell-i/shell-j

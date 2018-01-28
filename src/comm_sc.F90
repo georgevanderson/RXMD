@@ -382,7 +382,7 @@ if (imode > 0) then !non-copyback mode
         case(MODE_QCOPY1_SC)
            sbuffer(ns+1) = qs(n)
            sbuffer(ns+2) = qt(n)
-           sbuffer(ns+3) = fpqeq(n)
+           !sbuffer(ns+3) = fpqeq(n)
            !sbuffer(ns+4) = dble(n)
 
         case(MODE_QCOPY2_SC)
@@ -656,7 +656,7 @@ if (imode > 0) then !for non-copyback mode
            case(MODE_QCOPY1_SC)
               qs(m) = rbuffer(ine+1)
               qt(m) = rbuffer(ine+2)
-              fpqeq(m) = rbuffer(ine+3)
+              !fpqeq(m) = rbuffer(ine+3)
               !scindx(m) = nint(rbuffer(ine+4))
 
            case(MODE_QCOPY2_SC)
