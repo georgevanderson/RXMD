@@ -18,7 +18,6 @@ EXE := rxmd
 #FC = mpif90 -check all -traceback
 
 # gfortran
-#FC = mpif90 -O3 -ffast-math
 FC = mpif90 -O3 -ffast-math
 #FC = mpif90 -fopenmp -O3 -ffast-math
 #FC = mpif90 -fcheck=all -g
@@ -34,8 +33,8 @@ FC = mpif90 -O3 -ffast-math
 #OPT = -O3 -qhot=level=0 -qimd=auto
 #LDFLAGS = -L/soft/perftools/hpctw -lmpihpm -L/soft/perftools/bgpm/lib -lbgpm 
 
-#CPP :=
-CPP := -DQEQDUMP
+CPP :=
+#CPP := -DQEQDUMP
 #CPP := -DQEQDUMP -DDEBUG_CPBK 
 #CPP := -DQEQDUMP -DDEBUG_CPBK -DMATT_DEBUG
 #CPP := -DQEQDUMP -DMATT_DEBUG -DPQEQDUMP
