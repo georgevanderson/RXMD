@@ -129,7 +129,7 @@ do dflag=1, 6
       i = (6-dflag)/2 + 1         ! <-[321]
    
    !elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC .or. imode==MODE_COPY_SC) then ! for SC, communicate only x+,y+, and z+
-   elseif(imode > MODE_SC) then
+   elseif(abs(imode) > MODE_SC) then
       if (MOD(dflag,2) == 0) then
          copyptr_sc(dflag) = copyptr_sc(dflag-1)
          copyptr(dflag) = copyptr_sc(dflag)
@@ -191,6 +191,7 @@ if(mod(nstep,pstep)==0) then
   ni=nstep/pstep+1
   if(imode==MODE_MOVE) maxas(ni,4)=na/ne
   if(imode==MODE_COPY) maxas(ni,5)=na/ne
+  if(imode==MODE_COPY_SC) maxas(ni,5)=na/ne
 endif
 
 
@@ -292,7 +293,7 @@ ns=0
 cptridx=((dflag-1)/2)*2 ! <- [002244]
 
 
-if (imode > MODE_SC) then
+if (abs(imode) > MODE_SC) then
    if (cptridx > 0) cptridx = cptridx - 1   !<- [013] For SC
 endif
 
@@ -302,7 +303,7 @@ if (imode > 0) then !non-copyback mode
 
 !--- # of elements to be sent. should be more than enough. 
    !if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
-   if (imode > MODE_SC) then
+   if (abs(imode) > MODE_SC) then
       ni = copyptr_sc(cptridx)*ne
    else
       ni = copyptr(cptridx)*ne
@@ -319,7 +320,7 @@ if (imode > 0) then !non-copyback mode
 
 !--- determine the last copy index for either SC or normal communication
    !if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
-   if (imode > MODE_SC) then
+   if (abs(imode) > MODE_SC) then
       !if (cptridx > 0) cptridx = cptridx - 1   !<- [013] For SC
       copyptr_last = copyptr_sc(cptridx)
    else
@@ -760,7 +761,7 @@ endif
 !     .and. imode /= MODE_CPBKSHELL_SC .and. imode /= MODE_CPFPQEQ_SC) then
 if (imode > 0) then !non-copyback mode
   !if(nr==0 .and. (imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC .or. imode == MODE_COPY_SC)) then
-  if(nr==0 .and. (imode > MODE_SC)) then
+  if(nr==0 .and. (abs(imode) > MODE_SC)) then
      print '(a,2i5)',"imode, dflag:",imode,dflag
      m = copyptr_sc(dflag-2)
   elseif(nr==0) then 
@@ -768,7 +769,7 @@ if (imode > 0) then !non-copyback mode
   endif
 
   !if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then !update copyptr for sc communication (e.g. 3-ways only)
-  if (imode > MODE_SC) then !update copyptr for sc communication (e.g. 3-ways only)
+  if (abs(imode) > MODE_SC) then !update copyptr for sc communication (e.g. 3-ways only)
      copyptr_sc(dflag) = m
   else
      copyptr(dflag) = m !update copyptr for 6-way communication

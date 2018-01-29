@@ -643,7 +643,7 @@ print '(a20,2es25.15)', "(fpqeq) after ", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+
 
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
-  nn=maxval(nbplist(1:NATOMS,0))
+  nn=maxval(nbplist_sc(1:NATOMS,0))
   i=nstep/pstep+1
   maxas(i,3)=nn
 endif

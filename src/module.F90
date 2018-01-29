@@ -113,6 +113,7 @@ integer :: ns, nr, na, ne
 integer,parameter :: MODE_SC = 50000   !for PQeQ using SC algorithm
 integer,parameter :: MODE_COPY = 1, MODE_MOVE = 2, MODE_CPBK = -3
 integer,parameter :: MODE_QCOPY1 = 4, MODE_QCOPY2 = 5
+
 integer,parameter :: MODE_COPY_SC = 50006   !for PQeQ using SC algorithm
 integer,parameter :: MODE_QCOPY1_SC = 50007   !for PQeQ using SC algorithm
 integer,parameter :: MODE_QCOPY2_SC = 50008   !for PQeQ using SC algorithm
@@ -124,11 +125,12 @@ integer,parameter :: MODE_CPFPQEQ_SC = -50013   !for PQeQ using SC algorithm
 
 integer,parameter :: NE_COPY = 13, NE_MOVE = 15
 integer,parameter :: NE_QCOPY1 = 2, NE_QCOPY2 = 3
+integer,parameter :: NE_CPBK = 4
+
+
 integer,parameter :: NE_COPY_SC = 13
 integer,parameter :: NE_QCOPY1_SC = 2
 integer,parameter :: NE_QCOPY2_SC = 3
-
-integer,parameter :: NE_CPBK = 4
 integer,parameter :: NE_CPHSH_SC = 3
 integer,parameter :: NE_CPGSGT_SC = 3
 integer,parameter :: NE_CPFPQEQ_SC = 2
