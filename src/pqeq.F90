@@ -589,6 +589,14 @@ real(8) :: qic,qjc,ff(3)
 integer :: ti,tj,tk
 call system_clock(ti,tk)
 
+do i=1, NATOMS + na/ne
+   ity = nint(atype(i))
+
+!--- for PQEq
+   qic = q(i) + Zpqeq(ity)
+   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
+
+
    do j1 = 1, nbplist_sc(0,i)
       j = nbplist_sc(j1,i)
       jty = nint(atype(j))
@@ -599,7 +607,7 @@ call system_clock(ti,tk)
 
 !--- core-i/core-j
 
-      pqeqcoeff(:,j1,i) = 0.d0
+      pqeqcoeff(2:4,j1,i) = 0.d0
       !--- shell-i/core-j
       if(isPolarizable(ity)) then
          dr(1:3)=shelli(1:3)-pos(j,1:3)
@@ -623,6 +631,7 @@ call system_clock(ti,tk)
 
    enddo ! do j1 = 1, nbplist_sc(0,i)
 
+enddo !do i=1, NATOMS + na/ne
 call system_clock(tj,tk)
 it_timer(18)=it_timer(18)+(tj-ti)
 
