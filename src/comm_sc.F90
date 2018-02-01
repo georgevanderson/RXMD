@@ -53,7 +53,8 @@ call system_clock(tti,tk)
 !if (imode == MODE_COPY_SC) then
 !   call xu2xs(rreal,pos,max(NATOMS,copyptr_sc(5)))
 !elseif (imode == MODE_COPY .or. imode == MODE_MOVE) then
-call xu2xs(rreal,pos,max(NATOMS,copyptr(6)))
+!if (imode == MODE_COPY_SC) call xu2xs(rreal,pos,max(NATOMS,copyptr(6)))
+call xu2xs(rreal,pos,max(NATOMS,copyptr_sc(6)))
 !endif
 
 !--- clear total # of copied atoms, sent atoms, recieved atoms
@@ -144,8 +145,10 @@ do dflag=1, 6
 #endif
 
    call store_atoms_sc(tn1, dflag, imode, dr)
-   call send_recv_sc(tn1, tn2, myparity(i))
+   !call send_recv_sc(tn1, tn2, myparity(i))
+   call send_recv_sc(tn1, tn2, dflag)
    call append_atoms_sc(dflag, imode)
+   !call MPI_BARRIER(MPI_COMM_WORLD, ierr)
 
 #ifdef MATT_DEBUG
    print '(a,i6,i3,i10,i10)', "=============  End imode,dflag, ns/ne, na/ne =", imode,dflag, ns/ne, na/ne
@@ -185,7 +188,8 @@ endif
 !--- by here, we got new atom positions in the normalized coordinate, need to update real coordinates.
 !if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(pos,rreal,copyptr(6))
 !if(imode== MODE_COPY_SC) call xs2xu(pos,rreal,copyptr_sc(5))
-if(imode== MODE_COPY_SC .or. imode == MODE_MOVE .or. imode == MODE_COPY) call xs2xu(pos,rreal,copyptr(6))
+!if(imode== MODE_COPY_SC .or. imode == MODE_MOVE .or. imode == MODE_COPY) call xs2xu(pos,rreal,copyptr(6))
+if (imode == MODE_COPY_SC) call xs2xu(pos,rreal,copyptr_sc(6))
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   ni=nstep/pstep+1
@@ -203,15 +207,15 @@ return
 CONTAINS 
 
 !--------------------------------------------------------------------------------------------------------------
-subroutine send_recv_sc(tn1, tn2, mypar)
+subroutine send_recv_sc(tn1, tn2, dflag)
 use atoms
 ! shared variables::  <ns>, <nr>, <na>, <sbuffer()>, <rbuffer()>
 ! This subroutine only takes care of communication part. won't be affected by wether atom migration or atom 
 ! copy mode. 
 !--------------------------------------------------------------------------------------------------------------
 implicit none
-integer,intent(IN) ::tn1, tn2, mypar 
-integer :: recv_stat(MPI_STATUS_SIZE)
+integer,intent(IN) ::tn1, tn2, dflag
+integer :: recv_stat(MPI_STATUS_SIZE),ierr2(MPI_STATUS_SIZE)
 real(8) :: recv_size
 
 !--- if the traget node is the node itself, atoms informations are already copied 
@@ -221,47 +225,35 @@ if(myid==tn1) return
 
 call system_clock(ti,tk)
 
-if (mypar == 0) then
-
+     nr = 13*ns
+     call CheckSizeThenReallocate(rbuffer,nr)
+#ifdef DEBUG_COMM
+     call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+     print '(a20,6i10)','dflag,myid,tn1,tn2,ns,nr',dflag,myid,tn1,tn2,ns,nr
+#endif
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! if ns == 0, send one double to tell remote rank that there will be no atom data to be sent. 
      if (ns > 0) then 
-       call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 10, MPI_COMM_WORLD, ierr)
+       call MPI_SENDRECV(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 10+dflag, &
+                         rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10+dflag, MPI_COMM_WORLD, recv_stat,ierr)
      else
-       call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 10, MPI_COMM_WORLD, ierr)
+       call MPI_SENDRECV(1, 1, MPI_DOUBLE_PRECISION, tn1, 10+dflag, &
+                         rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10+dflag, MPI_COMM_WORLD, recv_stat,ierr)
      endif
-
-     call MPI_Probe(tn2, 11, MPI_COMM_WORLD, recv_stat, ierr)
-     call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr)
-
+     call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr2)
      call CheckSizeThenReallocate(rbuffer,nr)
 
-     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 11, MPI_COMM_WORLD, recv_stat, ierr)
-
+#ifdef DEBUG_COMM
+     call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+     call sleep(1)
+     if (myid == 0) print *,'================================'
+     call sleep(1)
+#endif
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! nr == 1 means no atom data to be received. 
      if(nr==1) nr=0 
 
-elseif (mypar == 1) then
-
-     call MPI_Probe(tn2, 10, MPI_COMM_WORLD, recv_stat, ierr)
-     call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr)
-
-     call CheckSizeThenReallocate(rbuffer,nr)
-
-     call MPI_RECV(rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10, MPI_COMM_WORLD, recv_stat, ierr)
-
-     ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
-     ! nr == 1 means no atom data to be received. 
-     if(nr==1) nr=0 
-
-     if (ns > 0) then
-        call MPI_SEND(sbuffer, ns, MPI_DOUBLE_PRECISION, tn1, 11, MPI_COMM_WORLD, ierr)
-     else
-        call MPI_SEND(1, 1, MPI_DOUBLE_PRECISION, tn1, 11, MPI_COMM_WORLD, ierr)
-     endif
-
-endif
+!endif
 
 call system_clock(tj,tk)
 it_timer(25)=it_timer(25)+(tj-ti)
