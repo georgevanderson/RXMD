@@ -86,7 +86,6 @@ do i=1, NATOMS
    write(95,'(i10,es25.15)') i,q(i)
    do j1=1,nbplist(i,0)
       j = nbplist(i,j1)
-      !write(91,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian(j1,i)
       write(91,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian(j1,i)
    enddo
 enddo
@@ -94,10 +93,8 @@ enddo
 
 #ifdef PQEQDUMP 
 do i=1, NATOMS + na/ne
-   do j1=1,nbplist_sc(i,0)
-      j = nbplist_sc(i,j1)
-      !write(94,'(4i6,4es25.15)') -1, l2g(atype(i)),nint(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
-      !write(94,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
+   do j1=1,nbplist_sc(0,i)
+      j = nbplist_sc(j1,i)
          if (l2g(atype(i)) < l2g(atype(j))) then
           write(94,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
        else
@@ -131,10 +128,7 @@ do nstep_qeq=0, nmax-1
 
 #ifdef PQEQDUMP 
 do i=1, NATOMS
-   !do j1=1,nbplist_sc(i,0)
-   !   j = nbplist_sc(i,j1)
       write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
-   !enddo
 enddo
 
 #endif
@@ -155,10 +149,7 @@ print '(a20,4es25.15)', "(hshs,hsht) after ", sum(hshs(1:NATOMS)), sum(hsht(1:NA
 
 #ifdef PQEQDUMP 
 do i=1, NATOMS
-   !do j1=1,nbplist_sc(i,0)
-   !   j = nbplist_sc(i,j1)
       write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
-   !enddo
 enddo
 #endif
 
@@ -207,9 +198,9 @@ enddo
 !--- update new charges of buffered atoms.
   call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
-#ifdef DEBUG_CPBK
-print '(a20,1es25.15)', "(q)",sum(q(1:NATOMS))
-#endif
+!#ifdef DEBUG_CPBK
+!print '(a20,1es25.15)', "(q)",sum(q(1:NATOMS))
+!#endif
 
 !--- save old residues.  
   Gold(:) = Gnew(:)
@@ -343,9 +334,9 @@ do i=1, NATOMS + na/ne
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
    qic = q(i) + Zpqeq(ity)
 
-   do j1 = 1, nbplist_sc(i,0)
+   do j1 = 1, nbplist_sc(0,i)
 
-      j = nbplist_sc(i,j1)
+      j = nbplist_sc(j1,i)
       jty = nint(atype(j))
 
       qjc = q(j) + Zpqeq(jty)
@@ -427,98 +418,10 @@ logical :: sc_test,duplicate_test
 
 call system_clock(ti,tk)
 
-nbplist(:,0) = 0
-nbplist_sc(:,0) = 0
+!nbplist(:,0) = 0
+nbplist_sc(0,:) = 0
 fpqeq(:) = 0.d0
 
-#if 0
-
-!$omp parallel do schedule(runtime), default(shared), &
-!$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,c4,c5,c6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
-do c1=0, nbcc(1)-1
-do c2=0, nbcc(2)-1
-do c3=0, nbcc(3)-1
-
-   i = nbheader(c1,c2,c3)
-   do m = 1, nbnacell(c1,c2,c3)
-
-   ity=nint(atype(i))
-
-   !fpqeq(i)=0.d0
-
-   do mn = 1, nbnmesh
-      c4 = c1 + nbmesh(1,mn)
-      c5 = c2 + nbmesh(2,mn)
-      c6 = c3 + nbmesh(3,mn)
-
-
-      j = nbheader(c4,c5,c6)
-      do n=1, nbnacell(c4,c5,c6)
-
-         if(i/=j) then
-            dr(1:3) = pos(i,1:3) - pos(j,1:3)
-            dr2 =  sum(dr(1:3)*dr(1:3))
-
-            if(dr2 < rctap2) then
-
-               jty = nint(atype(j))
-
-!--- make neighbor-list upto the taper function cutoff
-!$omp atomic
-               nbplist(i,0) = nbplist(i,0) + 1
-               nbplist(i,nbplist(i,0)) = j
-
-!--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
-               !sc_test = (j > i .and. (pos(j,1) .ge. 0.d0) .and. (pos(j,2) .ge. 0.d0) .and. (pos(j,3) .ge. 0.d0)) 
-               !if (sc_test .eqv. .TRUE.) then
-               !   if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
-!$omp atomic
-               !   nbplist_sc(i,0) = nbplist_sc(i,0) + 1
-               !   nbplist_sc(i,nbplist_sc(i,0)) = j
-               !   endif
-               !endif
-!--- get table index and residual value
-               itb = int(dr2*UDRi)
-               drtb = dr2 - itb*UDR
-               drtb = drtb*UDRi
-
-!--- PEQq : 
-               ! contribution from core(i)-core(j)
-               call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
-
-               hessian(nbplist(i,0),i) = Cclmb0_qeq * pqeqc
-               !if (sc_test .eqv. .TRUE.) then
-               !   if(nbheader(c1,c2,c3) /= nbheader(c4,c5,c6) .or. (i<j)) then
-               !      hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
-               !   endif
-               !endif
-
-               fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
-
-               ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
-               if( isPolarizable(jty) ) then 
-                  dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
-                  call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
-
-                  fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
-               endif
-
-            endif
-         endif
-
-         j=nbllist(j)
-      enddo
-   enddo !   do mn = 1, nbnmesh
-
-   i=nbllist(i)
-   enddo
-enddo; enddo; enddo
-!$omp end parallel do
-
-
-#endif
-
-!--- MATT TO DO-----------------------------
 !--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
 !--- Determine NT interaction 
 !print '(a,2i10)', "NATOMS,na/ne:",NATOMS, na/ne
@@ -559,49 +462,34 @@ do mn = 1, nbnmesh_sc
 
    ity=nint(atype(i))
 
-   !fpqeq(i)=0.d0
-
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
 
-            !if ((j > NATOMS)) then 
-            !   print '(a,2i6)',"(i,j)J>NATOMS:",i,j
-            !if (i > NATOMS) then 
-            !   print '(a,2i6)',"(i,j)I,J>NATOMS:",i,j
-            !endif
-            !endif
-
-         !if(i/=j) then
-         !compute only atoms in the same cell
+!--- For interaction of atoms in the same cell, only consider i<j to avoid double counting
+!--- Otherwise, all i in cell (ci1,ci2,ci3) and all j in cell (ci4,ci5,ci6) must be considered
          if((nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6)) .or. (i<j)) then
             dr(1:3) = pos(i,1:3) - pos(j,1:3)
             dr2 =  sum(dr(1:3)*dr(1:3))
 
-            !print '(a,2i6,2es15.5)',"(i,j,dist,rctap2):",i,j,dr2,rctap2
-            
             if(dr2 < rctap2) then
 
                jty = nint(atype(j))
 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
 !$omp atomic
-               nbplist_sc(i,0) = nbplist_sc(i,0) + 1
-               nbplist_sc(i,nbplist_sc(i,0)) = j
-!--- get table index and residual value
-            itb = int(dr2*UDRi)
-            drtb = dr2 - itb*UDR
-            drtb = drtb*UDRi
+               nbplist_sc(0,i) = nbplist_sc(0,i) + 1
+               nbplist_sc(nbplist_sc(0,i),i) = j
 
 !--- PEQq : 
             ! contribution from core(i)-core(j)
             call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
-            hessian_sc(nbplist_sc(i,0),i) = Cclmb0_qeq * pqeqc
+            hessian_sc(nbplist_sc(0,i),i) = Cclmb0_qeq * pqeqc
 
 
             fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
             fpqeq(j) = fpqeq(j) + Cclmb0_qeq * pqeqc * Zpqeq(ity) ! Eq. 30
 
-            ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
+            ! contribution from  C(r_icjs) if j-atom is polarizable
             if( isPolarizable(jty) ) then 
                dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
                call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
@@ -609,8 +497,9 @@ do mn = 1, nbnmesh_sc
                fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
             endif
 
+            ! contribution from  C(r_jcis) if i-atom is polarizable
             if( isPolarizable(ity) ) then 
-               dr(1:3)=pos(j,1:3) - pos(i,1:3) - spos(i,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+               dr(1:3)=pos(j,1:3) - pos(i,1:3) - spos(i,1:3) ! pos(j,1:3)-(pos(i,1:3)+spos(i,1:3))  
                call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),pqeqs,inxnpqeq(ity, jty),TBL_Eclmb_psc,ff)
 
                fpqeq(j) = fpqeq(j) - Cclmb0_qeq * pqeqs * Zpqeq(ity) ! Eq. 30
@@ -633,6 +522,7 @@ enddo; enddo; enddo
 #ifdef DEBUG_CPBK
 print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
 #endif
+
 call COPYATOMS_SC(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
@@ -643,10 +533,17 @@ print '(a20,2es25.15)', "(fpqeq) after ", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+
 
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
-  nn=maxval(nbplist_sc(1:NATOMS,0))
+  nn=maxval(nbplist_sc(0,1:NATOMS))
   i=nstep/pstep+1
   maxas(i,3)=nn
 endif
+
+#ifdef DEBUG_CPBK
+print *,"*******************************************"
+print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(0,:))
+print *,"*******************************************"
+
+#endif
 
 
 #ifdef MATT_DEBUG
@@ -665,7 +562,7 @@ endif
 
 print *,"*******************************************"
 print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
-print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(:,0))
+print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(0,:))
 print *,"*******************************************"
 #endif
 
@@ -711,26 +608,13 @@ do i=1, NATOMS + na/ne
    qic = q(i) + Zpqeq(ity)
    shelli(1:3) = pos(i,1:3) + spos(i,1:3)
 
-   !can be removed?
-   !dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
-
    !avoid Est q(i)*q(i) double counting. Only do this for resident atoms
    if (i <= NATOMS) then
-
-      !Eshell = 0.d0
-      !if(isPolarizable(ity)) then
-      !   dr2 = sum( spos(i,1:3)*spos(i,1:3) )
-      !   Eshell = 0.5d0*Kspqeq(ity)*dr2
-      !endif
-
-      !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)) + Eshell
-      !Est = Est + CEchrge*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
-      !Est = Est + CEchage*(chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i))
       Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
    endif
 
-   do j1 = 1, nbplist_sc(i,0)
-      j = nbplist_sc(i,j1)
+   do j1 = 1, nbplist_sc(0,i)
+      j = nbplist_sc(j1,i)
       jty = nint(atype(j))
 
 !--- for PQEq
@@ -740,47 +624,27 @@ do i=1, NATOMS + na/ne
       Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0; Csjci=0.d0
 
 !--- core-i/core-j
-      !Ccicj = hessian_sc(j1,i)*qic*qjc
-      !Ccicj = Ccicj*qic*qjc  !core i-j full
       Ccicj = hessian_sc(j1,i)*qic*qjc  !core i-j full
-      !Ccicj = Ccicj*qic*qjc*0.5d0  !core i-j full
-      !dr(1:3)=pos(i,1:3)-pos(j,1:3)
-      !call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),Ccicj,inxnpqeq(ity,jty),TBL_Eclmb_pcc,ff)
-      !Ccicj = 0.5d0*Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
-      !Ccicj = Cclmb0_qeq*Ccicj*qic*qjc  !core i-j full
-      !Ccicj = Ccicj*Zpqeq(ity)*Zpqeq(jty)  !core i-j full
-      !print '(a10,es25.15)',"Ccicj:",Ccicj
 
       !--- shell-i/core-j
       if(isPolarizable(ity)) then
          dr(1:3)=shelli(1:3)-pos(j,1:3)
-         !print '(a10,6es25.15)',"dist:",shelli(:),pos(j,:)
-         !print '(a10,3es25.15)',"dr:",dr(:)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csicj,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
-         !Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
          Csicj=-Cclmb0_qeq*Csicj*qjc*Zpqeq(ity)
       endif
        
       !--- core-i/shell-j
       if(isPolarizable(jty)) then
          dr(1:3)=shellj(1:3)-pos(i,1:3)
-         !print '(a10,6es25.15)',"dist:",shellj(:),pos(i,:)
-         !print '(a10,3es25.15)',"dr:",dr(:)
-         !call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),Csjci,inxnpqeq(jty,ity),TBL_Eclmb_psc,ff)
-         !Csjci=-Cclmb0_qeq*Csjci*qjc*Zpqeq(ity)
          Csjci=-Cclmb0_qeq*Csjci*qic*Zpqeq(jty)
       endif
 
          !--- shell-i/shell-j
       if(isPolarizable(ity) .and. isPolarizable(jty)) then
          dr(1:3)=shelli(1:3)-shellj(1:3)
-         !print '(a10,6es25.15)',"dist:",shelli(:),shellj(:)
-         !print '(a10,3es25.15)',"dr:",dr(:)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Csisj,inxnpqeq(ity,jty),TBL_Eclmb_pss,ff)
-         !Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
          Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
-         !print '(a10,es25.15)',"Csisj:",Csisj
       endif
 
       hshs(i) = hshs(i) + hessian_sc(j1,i)*hs(j)
@@ -792,101 +656,10 @@ do i=1, NATOMS + na/ne
 
 !--- In FS PQeQ, get half of potential energy, then sum it up if atoms are resident.
 !--- But in SC PQeQ, get full potential energy (no duplicate atom pair) and sum up all atoms including cached atoms.
-      !Est1 = 2.d0*Ccicj + Csicj + Csjci + 2.d0*Csisj
       Est1 = Ccicj + Csicj + Csjci + Csisj
-      
-      !if (i < j) then  
-         !print '(a,2i5,es25.15)',"Energy (i,j):",i,j,Est1
-         !print '(a,2i5,5es15.7)',"i,j,Ccicj,Csicj,Csjci,Csisj:",i,j,Est1,Ccicj,Csicj,Csjci,Csisj
-      !else
-         !print '(a,2i5,es25.15)',"Energy (i,j):",j,i,Est1
-         !print '(a,2i5,5es15.7)',"i,j,Ccicj,Csicj,Csjci,Csisj:",j,i,Est1,Ccicj,Csicj,Csjci,Csisj
-      !endif 
-
-      !Est = Est + 0.5d0*Est1
-      !if(j<=NATOMS) Est = Est + 0.5d0*Est1
-      Est = Est + Est1
      
-      !print '(a,i5,i5,r*4)',"get_hsh_sc(i,j),Ccicj,Csicj,Csjci,Csisj:",i,j
-      !print *,"get_hsh_sc(i,j),Ccicj,Csicj,Csjci,Csisj:",i,j,Ccicj,Csicj,Csjci,Csisj
-   enddo
-
-enddo
-!$omp end parallel do
-
-call system_clock(tj,tk)
-it_timer(18)=it_timer(18)+(tj-ti)
-
-end subroutine 
-
-!-----------------------------------------------------------------------------------------------------------------------
-subroutine get_hsh(Est)
-use atoms; use parameters
-! This subroutine updates hessian*cg array <hsh> and the electrostatic energy <Est>.  
-!-----------------------------------------------------------------------------------------------------------------------
-implicit none
-real(8),intent(OUT) :: Est
-integer :: i,j,j1, ity, jty, inxn
-real(8) :: eta_ity, Est1, dr2, dr(3)
-
-real(8) :: Ccicj,Csicj,Csisj,shelli(3),shellj(3),qic,qjc,ff(3)
-real(8) :: Eshell
-
-integer :: ti,tj,tk
-call system_clock(ti,tk)
-
-Est = 0.d0
-!$omp parallel do default(shared), reduction(+:Est) &
-!$omp private(i,j,j1,ity,jty,eta_ity,Est1,Eshell,Ccicj,Csicj,Csisj,shelli,shellj,qic,qjc,ff,dr,dr2)
-do i=1, NATOMS
-   ity = nint(atype(i))
-   eta_ity = eta(ity)
-
-   hshs(i) = eta_ity*hs(i)
-   hsht(i) = eta_ity*ht(i)
-
-!--- for PQEq
-   qic = q(i) + Zpqeq(ity)
-   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
-
-   dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
-
-   Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
-
-   do j1 = 1, nbplist(i,0)
-      j = nbplist(i,j1)
-      jty = nint(atype(j))
-
-!--- for PQEq
-      qjc = q(j) + Zpqeq(jty)
-      shellj(1:3) = pos(j,1:3) + spos(j,1:3)
-
-      Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0
-
-      Ccicj = hessian(j1,i)
-      Ccicj = Ccicj*qic*qjc*0.5d0
-
-      if(isPolarizable(ity)) then
-         dr(1:3)=shelli(1:3)-pos(j,1:3)
-         call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csicj,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
-         Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
-
-         if(isPolarizable(jty)) then
-             dr(1:3)=shelli(1:3)-shellj(1:3)
-             call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Csisj,inxnpqeq(ity,jty),TBL_Eclmb_pss,ff)
-             Csisj=Cclmb0_qeq*Csisj*Zpqeq(ity)*Zpqeq(jty)
-         endif
-      endif
-
-      hshs(i) = hshs(i) + hessian(j1,i)*hs(j)
-      hsht(i) = hsht(i) + hessian(j1,i)*ht(j)
-
-!--- get half of potential energy, then sum it up if atoms are resident.
-      Est1 = Ccicj + Csicj + Csisj
-
-      Est = Est + 0.5d0*Est1
-      if(j<=NATOMS) Est = Est + 0.5d0*Est1
-   enddo
+      Est = Est + Est1
+   enddo ! do j1 = 1, nbplist_sc(0,i)
 
 enddo
 !$omp end parallel do
@@ -919,8 +692,8 @@ gtsum(:) = 0.d0
 !$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
 do i=1,NATOMS + na/ne
 
-   do j1=1, nbplist_sc(i,0) 
-      j = nbplist_sc(i,j1)
+   do j1=1, nbplist_sc(0,i) 
+      j = nbplist_sc(j1,i)
       gssum(i) = gssum(i) + hessian_sc(j1,i)*qs(j)
       gtsum(i) = gtsum(i) + hessian_sc(j1,i)*qt(j)
 
