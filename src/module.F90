@@ -135,7 +135,6 @@ integer,parameter :: NE_CPHSH_SC = 3
 integer,parameter :: NE_CPGSGT_SC = 3
 integer,parameter :: NE_CPFPQEQ_SC = 2
 
-real(8),allocatable :: fpqeq(:) !fpqeq become global variable for SC algorithm
 
 !<MAXLAYERS> MAXimum # of linkedlist cell LAYERS.
 integer,parameter :: MAXLAYERS=5
@@ -216,6 +215,11 @@ integer,allocatable :: nbplist(:,:)
 
 !<nbplist_sc> neighbor list of nonbonding interaction, non-bonding pair list based on SC algorithm
 integer,allocatable :: nbplist_sc(:,:)
+
+!<pqeqcoeff> storing frequently reused PQEq coefficients in get_hsh_sc to save redundant computation 
+integer,allocatable :: pqeqcoeff(:,:,:)
+
+real(8),allocatable :: fpqeq(:) !fpqeq become global variable for SC algorithm
 
 !<BO> Bond Order of atoms i-j (nearest neighb only) - (Eq 3a-3d)
 real(8),allocatable :: BO(:,:,:) 

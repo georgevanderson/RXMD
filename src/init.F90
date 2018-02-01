@@ -179,6 +179,8 @@ call allocatori2d(nbrindx,1,NBUFFER,1,MAXNEIGHBS)
 call allocatori2d(nbplist,1,NBUFFER,0,MAXNEIGHBS10)
 !call allocatori2d(nbplist_sc,1,NBUFFER,0,MAXNEIGHBS10)
 call allocatori2d(nbplist_sc,0,MAXNEIGHBS10,1,NBUFFER)
+call allocatori3d(pqeqcoeff,2,4,0,MAXNEIGHBS10,1,NBUFFER)
+
 call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
