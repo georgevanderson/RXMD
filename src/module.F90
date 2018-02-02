@@ -217,7 +217,7 @@ integer,allocatable :: nbplist(:,:)
 integer,allocatable :: nbplist_sc(:,:)
 
 !<pqeqcoeff> storing frequently reused PQEq coefficients in get_hsh_sc to save redundant computation 
-integer,allocatable :: pqeqcoeff(:,:,:)
+real(8),allocatable :: pqeqcoeff(:,:,:)
 
 real(8),allocatable :: fpqeq(:) !fpqeq become global variable for SC algorithm
 

@@ -179,7 +179,6 @@ call allocatori2d(nbrindx,1,NBUFFER,1,MAXNEIGHBS)
 call allocatori2d(nbplist,1,NBUFFER,0,MAXNEIGHBS10)
 !call allocatori2d(nbplist_sc,1,NBUFFER,0,MAXNEIGHBS10)
 call allocatori2d(nbplist_sc,0,MAXNEIGHBS10,1,NBUFFER)
-call allocatori3d(pqeqcoeff,2,4,0,MAXNEIGHBS10,1,NBUFFER)
 
 call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
@@ -217,6 +216,7 @@ call allocatord1d(fpqeq,1,NBUFFER)
 call allocatord1d(gssum,1,NBUFFER)
 call allocatord1d(gtsum,1,NBUFFER)
 call allocatord2d(sforce,1,NBUFFER,1,3)
+call allocatord3d(pqeqcoeff,2,4,0,MAXNEIGHBS10,1,NBUFFER)
 qs(:)=0.d0; qt(:)=0.d0; gs(:)=0.d0; gt(:)=0.d0; hs(:)=0.d0; ht(:)=0.d0; hshs(:)=0.d0; hsht(:)=0.d0
 
 !--- returning force index array 

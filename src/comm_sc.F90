@@ -296,11 +296,7 @@ if (imode > 0) then !non-copyback mode
 
 !--- # of elements to be sent. should be more than enough. 
    !if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
-   if (abs(imode) > MODE_SC) then
-      ni = copyptr_sc(cptridx)*ne
-   else
-      ni = copyptr(cptridx)*ne
-   endif
+   ni = copyptr_sc(cptridx)*ne
 !--- <sbuffer> will deallocated in store_atoms.
    call CheckSizeThenReallocate(sbuffer,ni)
 
@@ -313,14 +309,14 @@ if (imode > 0) then !non-copyback mode
 
 !--- determine the last copy index for either SC or normal communication
    !if (imode == MODE_COPY_SC .or. imode == MODE_QCOPY1_SC .or. imode == MODE_QCOPY2_SC) then
-   if (abs(imode) > MODE_SC) then
+   !if (imode > MODE_SC) then
       !if (cptridx > 0) cptridx = cptridx - 1   !<- [013] For SC
-      copyptr_last = copyptr_sc(cptridx)
-   else
-      copyptr_last = copyptr(cptridx)
-   endif
+   !   copyptr_last = copyptr_sc(cptridx)
+   !else
+   !   copyptr_last = copyptr(cptridx)
+   !endif
 !--- start buffering data depending on modes. all copy&move modes use buffer size, dr, to select atoms.
-   do n=1, copyptr_last
+   do n=1, copyptr_sc(cptridx)
 
       if(inBuffer(dflag,n,dr)) then
       
