@@ -80,6 +80,7 @@ call COPYATOMS_SC(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
+call get_pqeq_coeff_sc()
 
 #ifdef QEQDUMP 
 do i=1, NATOMS
@@ -89,6 +90,7 @@ do i=1, NATOMS
       write(91,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian(j1,i)
    enddo
 enddo
+write(95,*) " "
 #endif
 
 #ifdef PQEQDUMP 
@@ -106,7 +108,7 @@ enddo
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS_SC()
 !--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
+!call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 call get_gradient_sc(Gnew)
 
 !--- Let the initial CG direction be the initial gradient direction
@@ -115,7 +117,6 @@ ht(1:NATOMS) = gt(1:NATOMS)
 
 call COPYATOMS_SC(MODE_QCOPY2_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
-call get_pqeq_coeff_sc()
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
@@ -372,8 +373,9 @@ do i=1, NATOMS + na/ne
          ff(1:3)=Cclmb0*sf(1:3)*Zpqeq(ity)*Zpqeq(jty)
          sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
          sforce(j,1:3)=sforce(j,1:3)+ff(1:3) !reaction force on shell-j
-      endif
 
+      endif
+   
    enddo
 
 enddo
@@ -386,7 +388,7 @@ print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,1)),sum(sforce(1:
 call COPYATOMS_SC(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,3es25.15)', "(sforce) after", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
+print '(a20,3es25.15)', "(sforce) after ", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 !print *,"after shell update"
 

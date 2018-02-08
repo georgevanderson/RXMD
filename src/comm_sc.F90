@@ -73,7 +73,7 @@ if (imode == MODE_COPY_SC) then
    copyptr_sc(:) = 0
 endif
 
-copyptr(0)=NATOMS
+!copyptr(0)=NATOMS
 copyptr_sc(0)=NATOMS
 
 !--- set the number of data per atom 
@@ -150,7 +150,8 @@ do dflag=1, 6
    call send_recv_sc(tn1, tn2, dflag)
    call append_atoms_sc(dflag, imode)
    !call MPI_BARRIER(MPI_COMM_WORLD, ierr)
-   copyptr(dflag) = copyptr_sc(dflag)
+   !copyptr(dflag) = copyptr_sc(dflag)
+
 #ifdef MATT_DEBUG
    print '(a,i6,i3,i10,i10)', "=============  End imode,dflag, ns/ne, na/ne =", imode,dflag, ns/ne, na/ne
    print '(a,7i6)',"copyptr:", copyptr(:)
@@ -190,7 +191,9 @@ endif
 !if(imode== MODE_COPY .or. imode == MODE_MOVE) call xs2xu(pos,rreal,copyptr(6))
 !if(imode== MODE_COPY_SC) call xs2xu(pos,rreal,copyptr_sc(5))
 !if(imode== MODE_COPY_SC .or. imode == MODE_MOVE .or. imode == MODE_COPY) call xs2xu(pos,rreal,copyptr(6))
-if (imode == MODE_COPY_SC) call xs2xu(pos,rreal,copyptr_sc(6))
+if (imode == MODE_COPY_SC .or. imode == MODE_MOVE) then
+   call xs2xu(pos,rreal,copyptr_sc(6))
+endif
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   ni=nstep/pstep+1
@@ -242,7 +245,7 @@ call system_clock(ti,tk)
                          rbuffer, nr, MPI_DOUBLE_PRECISION, tn2, 10+dflag, MPI_COMM_WORLD, recv_stat,ierr)
      endif
      call MPI_Get_count(recv_stat, MPI_DOUBLE_PRECISION, nr, ierr2)
-     call CheckSizeThenReallocate(rbuffer,nr)
+     !call CheckSizeThenReallocate(rbuffer,nr)
 
 #ifdef DEBUG_COMM
      call MPI_BARRIER(MPI_COMM_WORLD, ierr)
