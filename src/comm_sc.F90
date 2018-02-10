@@ -194,6 +194,9 @@ endif
 if (imode == MODE_COPY_SC .or. imode == MODE_MOVE) then
    call xs2xu(pos,rreal,copyptr_sc(6))
 endif
+
+copyptr(:) = copyptr_sc(:)
+
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   ni=nstep/pstep+1
