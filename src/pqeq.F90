@@ -76,8 +76,11 @@ open(92,file="pqeqdump_before"//trim(rankToString(myid))//".txt")
 open(93,file="pqeqdump_after"//trim(rankToString(myid))//".txt")
 #endif
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
+!print *,"NATOM",NATOMS, NATOMS,na,ne
 call COPYATOMS_SC(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
+!print *,"NATOM",NATOMS, NATOMS,na,ne
+!call LINKEDLIST_SC(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
 call get_pqeq_coeff_sc()
@@ -137,15 +140,15 @@ enddo
 
 #endif
 
-#ifdef DEBUG_CPBK
-print '(a20,4es25.15)', "(hshs,hsht) before", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
+#ifdef DEBUG_CPBK_BEFORE
+print '(a20,i5,4es25.15)', "(hshs,hsht) before", myid, sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
       sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
 #endif
 
   call COPYATOMS_SC(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,4es25.15)', "(hshs,hsht) after ", sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
+print '(a20,i5,4es25.15)', "(hshs,hsht) after ", myid, sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
       sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
 #endif
 
@@ -315,7 +318,7 @@ integer :: i,ity,j,jty,j1,inxn
 real(8) :: shelli(3),shellj(3), qic, qjc, clmb, dclmb, dr2
 !real(8) :: sforce(NATOMS,3), sf(3), Esc, Ess
 real(8) :: sf(3), Esci, Escj, Ess
-real(8) :: ff(3)
+real(8) :: ff(3),ff1(3)
 
 real(8) :: dr(3)
 
@@ -381,14 +384,14 @@ do i=1, NATOMS + na/ne
 enddo
 
 !print *,"before shell update"
-#ifdef DEBUG_CPBK
-print '(a20,3es25.15)', "(sforce) before", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
+#ifdef DEBUG_CPBK_BEFORE
+print '(a20,i5,3es25.15)', "(sforce) before", myid, sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 
 call COPYATOMS_SC(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,3es25.15)', "(sforce) after ", sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
+print '(a20,i5,3es25.15)', "(sforce) after ", myid, sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
 #endif
 !print *,"after shell update"
 
@@ -447,6 +450,7 @@ do mn = 1, nbnmesh_sc
    ci5 = c2+nbmesh_sc(2,mn,2)
    ci6 = c3+nbmesh_sc(3,mn,2)
 
+!   print '(a,8i4)',"compute:",ci1,ci2,ci3,ci4,ci5,ci6,nbnacell(ci1,ci2,ci3),nbnacell(ci4,ci5,ci6)
 !print '(a,9i5)',"c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6:",c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6
 !--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
 !--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
@@ -470,6 +474,9 @@ do mn = 1, nbnmesh_sc
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
 
+!if (nbheader(ci1,ci2,ci3) == nbheader(ci4,ci5,ci6)) print '(a,10i4)',"compute:",ci1,ci2,ci3,ci4,ci5,ci6, & 
+!    nbheader(ci1,ci2,ci3),nbheader(ci4,ci5,ci6),nbnacell(ci1,ci2,ci3),nbnacell(ci4,ci5,ci6)
+
 !--- For interaction of atoms in the same cell, only consider i<j to avoid double counting
 !--- Otherwise, all i in cell (ci1,ci2,ci3) and all j in cell (ci4,ci5,ci6) must be considered
          if((nbheader(ci1,ci2,ci3) /= nbheader(ci4,ci5,ci6)) .or. (i<j)) then
@@ -479,7 +486,7 @@ do mn = 1, nbnmesh_sc
             if(dr2 < rctap2) then
 
                jty = nint(atype(j))
-
+               !print *,i,j 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
 !$omp atomic
                nbplist_sc(0,i) = nbplist_sc(0,i) + 1
@@ -524,14 +531,14 @@ enddo; enddo; enddo
 !$omp end parallel do
 
 
-#ifdef DEBUG_CPBK
-print '(a20,2es25.15)', "(fpqeq) before", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
+#ifdef DEBUG_CPBK_BEFORE
+print '(a20,i5,2es25.15)', "(fpqeq) before", myid, sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
 #endif
 
 call COPYATOMS_SC(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,2es25.15)', "(fpqeq) after ", sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
+print '(a20,i5,2es25.15)', "(fpqeq) after ", myid, sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
 #endif
 
 !-------END MATT----------------------------
@@ -545,7 +552,7 @@ endif
 
 #ifdef DEBUG_CPBK
 print *,"*******************************************"
-print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(0,:))
+print '(a,2i10)', "myid, Total nbplist_sc",myid,sum(nbplist_sc(0,:))
 print *,"*******************************************"
 
 #endif
@@ -859,14 +866,14 @@ do i=1,NATOMS + na/ne
 enddo 
 !$omp end parallel do
 
-#ifdef DEBUG_CPBK
-print '(a20,2es25.15)', "(gssum,gtsum) before", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
+#ifdef DEBUG_CPBK_BEFORE
+print '(a20,i5,2es25.15)', "(gssum,gtsum) before", myid, sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
 #endif
 
 call COPYATOMS_SC(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef DEBUG_CPBK
-print '(a20,2es25.15)', "(gssum,gtsum) after ", sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
+print '(a20,i5,2es25.15)', "(gssum,gtsum) after ", myid, sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
 #endif
 
 do i=1,NATOMS

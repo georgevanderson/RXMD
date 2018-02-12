@@ -78,22 +78,22 @@ copyptr_sc(0)=NATOMS
 
 !--- set the number of data per atom 
 select case(imode)
-   case(MODE_COPY)
-      ne = NE_COPY
-   case(MODE_MOVE)
-      ne = NE_MOVE
-   case(MODE_CPBK)
-      ne = NE_CPBK
-   case(MODE_QCOPY1)
-      ne = NE_QCOPY1
-   case(MODE_QCOPY2)
-      ne = NE_QCOPY2
+   !case(MODE_COPY)
+   !   ne = NE_COPY
+   !case(MODE_MOVE)
+   !   ne = NE_MOVE
+   !case(MODE_CPBK)
+   !   ne = NE_CPBK
+   !case(MODE_QCOPY1)
+   !   ne = NE_QCOPY1
+   !case(MODE_QCOPY2)
+   !   ne = NE_QCOPY2
    case(MODE_COPY_SC)
       ne = NE_COPY_SC
-   case(MODE_CPBK_SC)
-      ne = NE_CPBK
+   !case(MODE_CPBK_SC)
+   !   ne = NE_CPBK
    case(MODE_CPBKSHELL_SC)
-      ne = NE_CPBK
+      ne = NE_CPBKSHELL_SC
    case(MODE_QCOPY1_SC)
       ne = NE_QCOPY1_SC
    case(MODE_QCOPY2_SC)
@@ -109,24 +109,24 @@ select case(imode)
 end select
 
 do dflag=1, 6
-   tn1 = target_node(dflag)
-   tn2 = target_node(dinv(dflag))
+   tn1 = target_node(dflag) ! <-[246]
+   tn2 = target_node(dinv(dflag)) ! <-[135]
    i = (dflag+1)/2  !<- [123]
 
-   if(imode==MODE_CPBK) then  ! communicate with neighbors in reversed order
-      tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
-      tn2 = target_node(7-dflag) ! <-[654321] 
-      i = (6-dflag)/2 + 1         ! <-[321]
+   !if(imode==MODE_CPBK) then  ! communicate with neighbors in reversed order
+   !   tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
+   !   tn2 = target_node(7-dflag) ! <-[654321] 
+   !   i = (6-dflag)/2 + 1         ! <-[321]
  
    ! communicate with neighbors in +direction in reversed order (+z, +y, +x)
    !elseif(imode == MODE_CPFPQEQ_SC .or. imode == MODE_CPBKSHELL_SC .or. imode == MODE_CPBK_SC .or. imode==MODE_CPHSH_SC &
    !        .or. imode==MODE_CPGSGT_SC) then  
-   elseif(imode < 0 .and. abs(imode) > MODE_SC) then
+   if(imode < 0 .and. abs(imode) > MODE_SC) then
       if (MOD(dflag,2) == 1) then
          cycle
       endif
-      tn2 = target_node(7-dinv(dflag)) ! <-[563412] 
-      tn1 = target_node(7-dflag) ! <-[654321] 
+      tn2 = target_node(7-dinv(dflag)) ! <-[531] 
+      tn1 = target_node(7-dflag) ! <-[642] 
       i = (6-dflag)/2 + 1         ! <-[321]
    
    !elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC .or. imode==MODE_COPY_SC) then ! for SC, communicate only x+,y+, and z+
@@ -140,9 +140,11 @@ do dflag=1, 6
    endif
 
 #ifdef MATT_DEBUG
-   print '(a,i6,i3,i10,i10)', "=============Begin imode,dflag, ns/ne, na/ne =", imode,dflag, ns/ne, na/ne
-   print '(a,7i6)',"copyptr:", copyptr(:)
-   print '(a,7i6)',"copyptr_sc:", copyptr_sc(:)
+if (myid == 0) then
+   print '(a,2i6,i3,i10,i10)', "=============Begin myid, imode,dflag, ns/ne, na/ne =", myid,imode,dflag, ns/ne, na/ne
+   print '(a,8i6)',"copyptr:", myid,copyptr(:)
+   print '(a,8i6)',"copyptr_sc:", myid, copyptr_sc(:)
+endif
 #endif
 
    call store_atoms_sc(tn1, dflag, imode, dr)
@@ -153,9 +155,11 @@ do dflag=1, 6
    !copyptr(dflag) = copyptr_sc(dflag)
 
 #ifdef MATT_DEBUG
-   print '(a,i6,i3,i10,i10)', "=============  End imode,dflag, ns/ne, na/ne =", imode,dflag, ns/ne, na/ne
-   print '(a,7i6)',"copyptr:", copyptr(:)
-   print '(a,7i6)',"copyptr_sc:", copyptr_sc(:)
+if (myid == 0) then
+   print '(a,2i6,i3,i10,i10)', "=============  End myid, imode,dflag, ns/ne, na/ne =", myid, imode,dflag, ns/ne, na/ne
+   print '(a,8i6)',"copyptr:", myid,copyptr(:)
+   print '(a,8i6)',"copyptr_sc:", myid, copyptr_sc(:)
+endif
 #endif
 
 enddo
@@ -232,11 +236,10 @@ if(myid==tn1) return
 
 call system_clock(ti,tk)
 
-     nr = 13*ns
+     nr = max(100000,ns*26)
      call CheckSizeThenReallocate(rbuffer,nr)
 #ifdef DEBUG_COMM
      call MPI_BARRIER(MPI_COMM_WORLD, ierr)
-     print '(a20,6i10)','dflag,myid,tn1,tn2,ns,nr',dflag,myid,tn1,tn2,ns,nr
 #endif
      ! the number of elements per data packet has to be greater than 1, for example NE_COPY = 10.
      ! if ns == 0, send one double to tell remote rank that there will be no atom data to be sent. 
@@ -251,6 +254,12 @@ call system_clock(ti,tk)
      !call CheckSizeThenReallocate(rbuffer,nr)
 
 #ifdef DEBUG_COMM
+     !if (myid == 0) then
+     !    do i = 1,nr
+     !       print '(a,i5,2es25.15)',"rbuffer = ",i,sbuffer(i),rbuffer(i)
+     !    enddo
+     !endif
+     print '(a20,7i10)','imode,dflag,myid,tn1,tn2,ns,nr',imode,dflag,myid,tn1,tn2,ns,nr
      call MPI_BARRIER(MPI_COMM_WORLD, ierr)
      call sleep(1)
      if (myid == 0) print *,'================================'
@@ -453,6 +462,9 @@ else if(imode==MODE_CPBKSHELL_SC) then
    !n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
    call CheckSizeThenReallocate(sbuffer,n*ne)
 
+#ifdef MATT_DEBUG
+   print '(a,4i6)',"CPBK: imode, dflag, start, end:", imode, dflag, copyptr_sc(is-2)+1, copyptr_sc(is)
+#endif
    do n=copyptr_sc(is-2)+1, copyptr_sc(is)
    !do n=copyptr_sc(is_prior)+1, copyptr_sc(is)
       sbuffer(ns+1) = dble(scindx(n))
@@ -480,6 +492,9 @@ else if(imode==MODE_CPHSH_SC) then
    n = copyptr_sc(is) - copyptr_sc(is-2) + 1
    !n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
    call CheckSizeThenReallocate(sbuffer,n*ne)
+#ifdef MATT_DEBUG
+   print '(a,4i6)',"CPBK: imode, dflag, start, end:", imode, dflag, copyptr_sc(is-2)+1, copyptr_sc(is)
+#endif
 
    do n=copyptr_sc(is-2)+1, copyptr_sc(is)
    !do n=copyptr_sc(is_prior)+1, copyptr_sc(is)
@@ -511,6 +526,9 @@ else if(imode==MODE_CPGSGT_SC) then
    n = copyptr_sc(is) - copyptr_sc(is-2) + 1
    !n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
    call CheckSizeThenReallocate(sbuffer,n*ne)
+#ifdef MATT_DEBUG
+   print '(a,4i6)',"CPBK: imode, dflag, start, end:", imode, dflag, copyptr_sc(is-2)+1, copyptr_sc(is)
+#endif
 
    do n=copyptr_sc(is-2)+1, copyptr_sc(is)
    !do n=copyptr_sc(is_prior)+1, copyptr_sc(is)
@@ -542,6 +560,9 @@ else if(imode==MODE_CPFPQEQ_SC) then
    n = copyptr_sc(is) - copyptr_sc(is-2) + 1
    !n = copyptr_sc(is) - copyptr_sc(is_prior) + 1
    call CheckSizeThenReallocate(sbuffer,n*ne)
+#ifdef MATT_DEBUG
+   print '(a,4i6)',"CPBK: imode, dflag, start, end:", imode, dflag, copyptr_sc(is-2)+1, copyptr_sc(is)
+#endif
 
    do n=copyptr_sc(is-2)+1, copyptr_sc(is)
    !do n=copyptr_sc(is_prior)+1, copyptr_sc(is)

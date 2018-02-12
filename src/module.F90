@@ -131,6 +131,7 @@ integer,parameter :: NE_CPBK = 4
 integer,parameter :: NE_COPY_SC = 13
 integer,parameter :: NE_QCOPY1_SC = 2
 integer,parameter :: NE_QCOPY2_SC = 3
+integer,parameter :: NE_CPBKSHELL_SC = 4
 integer,parameter :: NE_CPHSH_SC = 3
 integer,parameter :: NE_CPGSGT_SC = 3
 integer,parameter :: NE_CPFPQEQ_SC = 2
@@ -358,7 +359,7 @@ integer(8),allocatable :: natoms_per_type(:)
 real(8),allocatable :: dthm(:), hmas(:)
 
 !--- potential teble
-integer,parameter :: NTABLE=5000
+integer,parameter :: NTABLE=50000
 real(8),allocatable :: TBL_Eclmb(:,:,:), TBL_Evdw(:,:,:), TBL_Eclmb_QEq(:,:)
 real(8) :: UDR, UDRi
 
