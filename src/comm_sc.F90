@@ -125,8 +125,8 @@ do dflag=1, 6
       if (MOD(dflag,2) == 1) then
          cycle
       endif
-      tn1 = target_node(7-dinv(dflag)) ! <-[563412] 
-      tn2 = target_node(7-dflag) ! <-[654321] 
+      tn2 = target_node(7-dinv(dflag)) ! <-[563412] 
+      tn1 = target_node(7-dflag) ! <-[654321] 
       i = (6-dflag)/2 + 1         ! <-[321]
    
    !elseif(imode==MODE_QCOPY1_SC .or. imode==MODE_QCOPY2_SC .or. imode==MODE_COPY_SC) then ! for SC, communicate only x+,y+, and z+
@@ -193,9 +193,9 @@ endif
 !if(imode== MODE_COPY_SC .or. imode == MODE_MOVE .or. imode == MODE_COPY) call xs2xu(pos,rreal,copyptr(6))
 if (imode == MODE_COPY_SC .or. imode == MODE_MOVE) then
    call xs2xu(pos,rreal,copyptr_sc(6))
+   copyptr(:) = copyptr_sc(:)
 endif
 
-copyptr(:) = copyptr_sc(:)
 
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
