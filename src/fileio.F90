@@ -261,7 +261,7 @@ real(8) :: rnorm(NBUFFER,3), mat(3,3)
 integer :: j
 
 !=== # of unit cells ===
-integer :: mx=4,my=4,mz=4
+integer :: mx=8,my=8,mz=4
 
 integer :: ix,iy,iz,ntot, imos2, iigd
 
@@ -278,7 +278,7 @@ if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
 if(.not.allocated(rreal)) call allocatord2d(rreal,1,NBUFFER,1,3)
 if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
-if(.not.allocated(f)) call allocatord2d(f,1,NBUFFER,1,3)
+if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
 if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
 f(:,:)=0.0
@@ -422,7 +422,7 @@ if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
 if(.not.allocated(rreal)) call allocatord2d(rreal,1,NBUFFER,1,3)
 if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
-if(.not.allocated(f)) call allocatord2d(f,1,NBUFFER,1,3)
+if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
 if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
 f(:,:)=0.0

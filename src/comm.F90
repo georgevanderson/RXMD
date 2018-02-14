@@ -31,7 +31,7 @@ implicit none
 integer,intent(IN) :: imode 
 real(8),intent(IN) :: dr(3)
 real(8) :: atype(NBUFFER), q(NBUFFER)
-real(8) :: rreal(NBUFFER,3),v(NBUFFER,3),f(NBUFFER,3)
+real(8) :: rreal(NBUFFER,3),v(NBUFFER,3),f(3,NBUFFER)
 
 real(8) :: pos(NBUFFER,3) ! <- normalized coordinate
 
@@ -298,7 +298,7 @@ else if(imode==MODE_CPBK) then
 
    do n=copyptr(is-1)+1, copyptr(is)
       sbuffer(ns+1) = dble(frcindx(n))
-      sbuffer(ns+2:ns+4) = f(n,1:3)
+      sbuffer(ns+2:ns+4) = f(1:3,n)
 
 !--- chenge index to point next atom.
       ns=ns+ne
@@ -398,7 +398,7 @@ else if(imode == MODE_CPBK) then
       ine=i*ne
 !--- Append the transferred forces into the original position of force array.
       m = nint(rbuffer(ine+1))
-      f(m,1:3) = f(m,1:3) + rbuffer(ine+2:ine+4)
+      f(1:3,m) = f(1:3,m) + rbuffer(ine+2:ine+4)
    enddo
 
 endif   

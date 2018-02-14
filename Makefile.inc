@@ -18,7 +18,7 @@ EXE := rxmd
 #FC = mpif90 -check all -traceback
 
 # gfortran
-FC = mpif90 -O3 -ffast-math
+#FC = mpif90 -O3 -ffast-math
 #FC = mpif90 -fopenmp -O3 -ffast-math
 #FC = mpif90 -fcheck=all -g
 
@@ -29,6 +29,8 @@ FC = mpif90 -O3 -ffast-math
 
 # Cray Programming Environment
 #FC = ftn
+FC = ftn -O3 -g -qopt-report=5 -qopt-report-phase=vec -qopenmp
+#FC = ftn -qopenmp -O3 -g -check bounds -traceback
 
 #OPT = -O3 -qhot=level=0 -qimd=auto
 #LDFLAGS = -L/soft/perftools/hpctw -lmpihpm -L/soft/perftools/bgpm/lib -lbgpm 

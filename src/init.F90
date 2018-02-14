@@ -129,7 +129,10 @@ call allocatord1d(atype,1,NBUFFER)
 call allocatord1d(q,1,NBUFFER)
 call allocatord2d(pos,1,NBUFFER,1,3)
 call allocatord2d(v,1,NBUFFER,1,3)
-call allocatord2d(f,1,NBUFFER,1,3)
+call allocatord2d(f,1,3,1,NBUFFER)
+!$omp parallel
+call allocatord2d(f_private,1,3,1,NBUFFER)
+!$omp end parallel
 
 !--- For PQEq
 call allocatord2d(spos,1,NBUFFER,1,3)
@@ -137,7 +140,8 @@ spos(:,:)=0.d0
 
 call allocatord1d(deltalp,1,NBUFFER)
 
-call ReadBIN(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
+!call ReadBIN(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
+call ReadMoS2(atype, pos, v, q, f, trim(DataDir)//"/rxff.bin")
 
 !--- Varaiable for extended Lagrangian method
 call allocatord1d(qtfp,1,NBUFFER)

@@ -8,7 +8,7 @@ implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
 real(8),intent(in) :: pos(NBUFFER,3)
-real(8),intent(inout) :: f(NBUFFER,3)
+real(8),intent(inout) :: f(3,NBUFFER)
 
 real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array dimension matches
 
@@ -44,12 +44,22 @@ enddo
 CALL BOCALC(NMINCELL, atype, pos)
 !$omp end parallel
 !$omp parallel default(shared)
+f_private(:,:) = 0.d0
 CALL ENbond()
 CALL Ebond()
 CALL Elnpr()
 CALL Ehb()
 CALL E3b()
 CALL E4b()
+
+do i = 1, NBUFFER
+  !$omp atomic
+  f(1,i) = f(1,i) + f_private(1,i)
+  !$omp atomic
+  f(2,i) = f(2,i) + f_private(2,i)
+  !$omp atomic
+  f(3,i) = f(3,i) + f_private(3,i)
+enddo
 !$omp end parallel 
 
 if(isEfield) call EEfield(PE(13),NATOMS,pos,q,f,atype,Eev_kcal)
@@ -57,12 +67,12 @@ if(isEfield) call EEfield(PE(13),NATOMS,pos,q,f,atype,Eev_kcal)
 CALL ForceBondedTerms(NMINCELL)
 
 do i=1, NBUFFER
-   astr(1)=astr(1)+pos(i,1)*f(i,1)
-   astr(2)=astr(2)+pos(i,2)*f(i,2)
-   astr(3)=astr(3)+pos(i,3)*f(i,3)
-   astr(4)=astr(4)+pos(i,2)*f(i,3)
-   astr(5)=astr(5)+pos(i,3)*f(i,1)
-   astr(6)=astr(6)+pos(i,1)*f(i,2)
+   astr(1)=astr(1)+pos(i,1)*f(1,i)
+   astr(2)=astr(2)+pos(i,2)*f(2,i)
+   astr(3)=astr(3)+pos(i,3)*f(3,i)
+   astr(4)=astr(4)+pos(i,2)*f(3,i)
+   astr(5)=astr(5)+pos(i,3)*f(1,i)
+   astr(6)=astr(6)+pos(i,1)*f(2,i)
 enddo
 
 CALL COPYATOMS(MODE_CPBK,[0.d0, 0.d0, 0.d0], atype, pos, vdummy, f, q) 
@@ -73,7 +83,7 @@ do i=1, NATOMS
    write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'pos',nint(atype(i)),pos(i,1:3)
 enddo
 do i=1, NATOMS
-   write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'frc',nint(atype(i)),f(i,1:3)
+   write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'frc',nint(atype(i)),f(1:3,i)
 enddo
 do i=1, NATOMS
    write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'chg',nint(atype(i)),q(i)
@@ -104,8 +114,8 @@ do i=1, copyptr(6)
      j=nbrlist(i,j1)
      dr(1:3) = pos(i,1:3) - pos(j,1:3)
      ff(1:3) = ccbnd(i)*dBOp(i,j1)*dr(1:3)
-     f(i,1:3) = f(i,1:3) - ff(1:3)
-     f(j,1:3) = f(j,1:3) + ff(1:3)
+     f(1:3,i) = f(1:3,i) - ff(1:3)
+     f(1:3,j) = f(1:3,j) + ff(1:3)
   enddo
 
 !--- reset ccbnd to zero for next turn. first rest is done during initialization.
@@ -610,18 +620,9 @@ do i=1, NATOMS
    
                   ff(1:3) = CEhb(3)*rjk(1:3)
 
-!$omp atomic
-                  f(j,1) = f(j,1) - ff(1)
-!$omp atomic
-                  f(j,2) = f(j,2) - ff(2)
-!$omp atomic
-                  f(j,3) = f(j,3) - ff(3)
-!$omp atomic
-                  f(k,1) = f(k,1) + ff(1)
-!$omp atomic
-                  f(k,2) = f(k,2) + ff(2)
-!$omp atomic
-                  f(k,3) = f(k,3) + ff(3)
+                  f_private(1:3,j) = f_private(1:3,j) - ff(1:3)
+                  f_private(1:3,k) = f_private(1:3,k) + ff(1:3)
+
 
                endif ! if(rik2<rchb2)
             endif
@@ -754,18 +755,8 @@ do i=1, NATOMS
 
                ff(1:3) = CEvdw*dr(1:3) + fcc(1:3) + fcs(1:3) + fsc(1:3) + fss(1:3)
     
-!$omp atomic
-               f(i,1) = f(i,1) - ff(1)
-!$omp atomic
-               f(i,2) = f(i,2) - ff(2)
-!$omp atomic
-               f(i,3) = f(i,3) - ff(3)
-!$omp atomic
-               f(j,1) = f(j,1) + ff(1)
-!$omp atomic
-               f(j,2) = f(j,2) + ff(2)
-!$omp atomic
-               f(j,3) = f(j,3) + ff(3)
+               f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
+               f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
             !endif
 
@@ -1101,19 +1092,8 @@ do j1=1, nbrlist(i,0)
   dr(1:3) = pos(i,1:3)-pos(j,1:3)
   ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
 
-!$omp atomic
-  f(i,1) = f(i,1) - ff(1)
-!$omp atomic
-  f(i,2) = f(i,2) - ff(2)
-!$omp atomic
-  f(i,3) = f(i,3) - ff(3)
-
-!$omp atomic
-  f(j,1) = f(j,1) + ff(1)
-!$omp atomic
-  f(j,2) = f(j,2) + ff(2)
-!$omp atomic
-  f(j,3) = f(j,3) + ff(3)
+  f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
+  f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
   Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
   Cbond(3)=coeff*BO(0,i,j1)*A2(j,i1) ! Coeff of deltap_j
@@ -1145,19 +1125,9 @@ Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
 
 dr(1:3) = pos(i,1:3) - pos(j,1:3)
 ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
-!$omp atomic
-f(i,1) = f(i,1) - ff(1)
-!$omp atomic
-f(i,2) = f(i,2) - ff(2)
-!$omp atomic
-f(i,3) = f(i,3) - ff(3)
 
-!$omp atomic
-f(j,1) = f(j,1) + ff(1)
-!$omp atomic
-f(j,2) = f(j,2) + ff(2)
-!$omp atomic
-f(j,3) = f(j,3) + ff(3)
+f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
+f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
 !--- A3 is not necessary anymore with the new BO def. 
 Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
@@ -1193,18 +1163,8 @@ Cbond(1) = cf(1)*(A0(i,j1) + BO(0,i,j1)*A1(i,j1))*dBOp(i,j1)        & !full BO
 dr(1:3) = pos(i,1:3)-pos(j,1:3)
 ff(1:3) = Cbond(1)*dr(1:3)
 
-!$omp atomic
-f(i,1) = f(i,1) - ff(1)
-!$omp atomic
-f(i,2) = f(i,2) - ff(2)
-!$omp atomic
-f(i,3) = f(i,3) - ff(3)
-!$omp atomic
-f(j,1) = f(j,1) + ff(1)
-!$omp atomic
-f(j,2) = f(j,2) + ff(2)
-!$omp atomic
-f(j,3) = f(j,3) + ff(3)
+f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
+f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
 !--- 1st element is "full"-bond order.
 cBO(1:3) = (/cf(1)*BO(0,i,j1),  cf(2)*BO(2,i,j1),  cf(3)*BO(3,i,j1) /)
@@ -1280,33 +1240,13 @@ fkl(1:3) =-coDD*( Cwl(1)*rij(1:3) + Cwl(2)*rjk(1:3) + Cwl(3)*rkl(1:3) )
 fijjk(1:3)= -fij(1:3) + fjk(1:3)
 fjkkl(1:3)= -fjk(1:3) + fkl(1:3)
 
-!$omp atomic
-f(i,1) = f(i,1) + fij(1) 
-!$omp atomic
-f(i,2) = f(i,2) + fij(2) 
-!$omp atomic
-f(i,3) = f(i,3) + fij(3) 
+f_private(1:3,i) = f_private(1:3,i) + fij(1:3) 
 
-!$omp atomic
-f(j,1) = f(j,1) + fijjk(1)
-!$omp atomic
-f(j,2) = f(j,2) + fijjk(2)
-!$omp atomic
-f(j,3) = f(j,3) + fijjk(3)
+f_private(1:3,j) = f_private(1:3,j) + fijjk(1:3)
 
-!$omp atomic
-f(k,1) = f(k,1) + fjkkl(1)
-!$omp atomic
-f(k,2) = f(k,2) + fjkkl(2)
-!$omp atomic
-f(k,3) = f(k,3) + fjkkl(3)
+f_private(1:3,k) = f_private(1:3,k) + fjkkl(1:3)
 
-!$omp atomic
-f(l,1) = f(l,1) - fkl(1)
-!$omp atomic
-f(l,2) = f(l,2) - fkl(2)
-!$omp atomic
-f(l,3) = f(l,3) - fkl(3)
+f_private(1:3,l) = f_private(1:3,l) - fkl(1:3)
 
 !--- Check N3rd ---
 !  print'(a,5f20.13)','N3rd: ',Cwi(1)-Cwi(2)+Cwj(1), Cwi(2)-Cwi(3)+Cwk(1), &
@@ -1349,26 +1289,11 @@ fij(1:3) = coCC*(Ci(1)*rij(1:3) + Ci(2)*rjk(1:3))
 fjk(1:3) =-coCC*(Ck(1)*rij(1:3) + Ck(2)*rjk(1:3))
 fijjk(1:3) =  -fij(1:3) + fjk(1:3) 
 
-!$omp atomic
-f(i,1) = f(i,1) + fij(1)
-!$omp atomic
-f(i,2) = f(i,2) + fij(2)
-!$omp atomic
-f(i,3) = f(i,3) + fij(3)
+f_private(1:3,i) = f_private(1:3,i) + fij(1:3)
 
-!$omp atomic
-f(j,1) = f(j,1) + fijjk(1)
-!$omp atomic
-f(j,2) = f(j,2) + fijjk(2)
-!$omp atomic
-f(j,3) = f(j,3) + fijjk(3)
+f_private(1:3,j) = f_private(1:3,j) + fijjk(1:3)
 
-!$omp atomic
-f(k,1) = f(k,1) - fjk(1)
-!$omp atomic
-f(k,2) = f(k,2) - fjk(2)
-!$omp atomic
-f(k,3) = f(k,3) - fjk(3)
+f_private(1:3,k) = f_private(1:3,k) - fjk(1:3)
 
 !--- Check N3rd ---
 !print'(a,6f20.13)','N3rd: ', &

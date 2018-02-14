@@ -212,14 +212,14 @@ use atoms
 !------------------------------------------------------------------------------
 implicit none
 
-real(8) :: atype(NBUFFER),v(NBUFFER,3),f(NBUFFER,3)
+real(8) :: atype(NBUFFER),v(NBUFFER,3),f(3,NBUFFER)
 
 integer :: i, ity
 real(8) :: dtf
 
 do i=1,NATOMS
    ity = nint(atype(i))
-   v(i,1:3) = v(i,1:3) + dtf*dthm(ity)*f(i,1:3)
+   v(i,1:3) = v(i,1:3) + dtf*dthm(ity)*f(1:3,i)
 enddo
 
 end subroutine

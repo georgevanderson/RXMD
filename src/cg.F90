@@ -27,7 +27,7 @@ subroutine ConjugateGradient(atype,pos)
 !---------------------------------------------------------------------------------
 implicit none
 real(8) :: atype(NBUFFER),pos(NBUFFER,3)
-real(8) :: f(NBUFFER,3),v(NBUFFER,3),q(NBUFFER)
+real(8) :: f(3,NBUFFER),v(NBUFFER,3),q(NBUFFER)
 
 real(8) :: p(NBUFFER,3) ! search direction
 real(8) :: gold(NBUFFER,3),gnew(NBUFFER,3) ! old and new gradients
