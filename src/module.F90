@@ -498,7 +498,7 @@ end subroutine
 subroutine get_coulomb_and_dcoulomb_pqeq(rr,alpha,Eclmb,inxn,TBL_Eclmb,ff)
 implicit none
 !-------------------------------------------------------------------------------------------
-real(8),intent(in) :: rr(3),alpha,TBL_Eclmb(ntype_pqeq2,NTABLE,0:1)
+real(8),intent(in) :: rr(3),alpha,TBL_Eclmb(0:1,NTABLE,ntype_pqeq2)
 integer,intent(in) :: inxn
 real(8) :: Ecc,Esc,Ess,dEcc,dEsc,dEss,Eclmb,dEclmb,ff(3)
 
@@ -521,8 +521,8 @@ drtb = dr2 - itb*UDR
 drtb = drtb*UDRi
 drtb1= 1.d0-drtb
 
-Eclmb = drtb1*TBL_Eclmb(inxn,itb,0)  + drtb*TBL_Eclmb(inxn,itb1,0)
-dEclmb = drtb1*TBL_Eclmb(inxn,itb,1)  + drtb*TBL_Eclmb(inxn,itb1,1)
+Eclmb = drtb1*TBL_Eclmb(0,itb,inxn)  + drtb*TBL_Eclmb(0,itb1,inxn)
+dEclmb = drtb1*TBL_Eclmb(1,itb,inxn)  + drtb*TBL_Eclmb(1,itb1,inxn)
 
 ff(1:3)=dEclmb*rr(1:3)
 
@@ -645,9 +645,9 @@ do jty=ity, ntype_pqeq
    inxnpqeq(jty,ity)=inxnpqeq(ity,jty)
 enddo; enddo
 
-allocate(TBL_Eclmb_pcc(ntype_pqeq2,NTABLE,0:1))
-allocate(TBL_Eclmb_psc(ntype_pqeq2,NTABLE,0:1))
-allocate(TBL_Eclmb_pss(ntype_pqeq2,NTABLE,0:1))
+allocate(TBL_Eclmb_pcc(0:1,NTABLE,ntype_pqeq2))
+allocate(TBL_Eclmb_psc(0:1,NTABLE,ntype_pqeq2))
+allocate(TBL_Eclmb_pss(0:1,NTABLE,ntype_pqeq2))
 
 !--- unit distance in r^2 scale
 UDR = rctap2/NTABLE
@@ -693,8 +693,8 @@ do jty=ity, ntype_pqeq
          Eclmb = clmb*screen*Tap
          dEclmb = dclmb*screen*Tap + clmb*dscreen*Tap + clmb*screen*dTap
 
-         TBL_Eclmb_pcc(inxn,i,0) = Eclmb
-         TBL_Eclmb_pcc(inxn,i,1) = dEclmb
+         TBL_Eclmb_pcc(0,i,inxn) = Eclmb
+         TBL_Eclmb_pcc(1,i,inxn) = dEclmb
 
          !--- core-shell interaction
          screen = erf(Asc*dr1)
@@ -703,8 +703,8 @@ do jty=ity, ntype_pqeq
          Eclmb = clmb*screen*Tap
          dEclmb = dclmb*screen*Tap + clmb*dscreen*Tap + clmb*screen*dTap
 
-         TBL_Eclmb_psc(inxn,i,0) = Eclmb
-         TBL_Eclmb_psc(inxn,i,1) = dEclmb
+         TBL_Eclmb_psc(0,i,inxn) = Eclmb
+         TBL_Eclmb_psc(1,i,inxn) = dEclmb
 
          !--- shell-shell interaction
          screen = erf(Ass*dr1)
@@ -713,8 +713,8 @@ do jty=ity, ntype_pqeq
          Eclmb = clmb*screen*Tap
          dEclmb = dclmb*screen*Tap + clmb*dscreen*Tap + clmb*screen*dTap
 
-         TBL_Eclmb_pss(inxn,i,0) = Eclmb
-         TBL_Eclmb_pss(inxn,i,1) = dEclmb
+         TBL_Eclmb_pss(0,i,inxn) = Eclmb
+         TBL_Eclmb_pss(1,i,inxn) = dEclmb
 
    enddo
 

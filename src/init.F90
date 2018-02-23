@@ -186,17 +186,17 @@ call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYE
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 
 !--- Bond Order Prime and deriv terms:
-call allocatord3d(dln_BOp,1,3,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(dBOp,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(deltap,1,NBUFFER,1,3)
+call allocatord3d(dln_BOp,1,3,1,MAXNEIGHBS,1,NBUFFER)
+call allocatord2d(dBOp,1,MAXNEIGHBS,1,NBUFFER)
+call allocatord2d(deltap,1,3,1,NBUFFER)
 
 !--- Bond Order terms
-call allocatord3d(BO,0,3,1,NBUFFER,1,MAXNEIGHBS)
+call allocatord3d(BO,0,3,1,MAXNEIGHBS,1,NBUFFER)
 call allocatord1d(delta,1,NBUFFER)
-call allocatord2d(A0,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A1,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A2,1,NBUFFER,1,MAXNEIGHBS)
-call allocatord2d(A3,1,NBUFFER,1,MAXNEIGHBS)
+call allocatord2d(A0,1,MAXNEIGHBS,1,NBUFFER)
+call allocatord2d(A1,1,MAXNEIGHBS,1,NBUFFER)
+call allocatord2d(A2,1,MAXNEIGHBS,1,NBUFFER)
+call allocatord2d(A3,1,MAXNEIGHBS,1,NBUFFER)
 call allocatord1d(nlp,1,NBUFFER)
 call allocatord1d(dDlp,1,NBUFFER)
 call allocatord1d(ccbnd,1,NBUFFER)

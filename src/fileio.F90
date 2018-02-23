@@ -53,7 +53,7 @@ m=0
 do i=1, NATOMS
    do j1 = 1, nbrlist(0,i)
 !--- don't count if BO is less than BNDcutoff.
-       if(BO(0,i,j1) > BNDcutoff) then 
+       if(BO(0,j1,i) > BNDcutoff) then 
            m=m+1
        endif
    enddo
@@ -109,11 +109,11 @@ do i=1, NATOMS
       jgd = l2g(atype(j))
 
 !--- if bond order is less than 0.3, ignore the bond.
-      if( BO(0,i,j1) < 0.3d0) cycle
+      if( BO(0,j1,i) < 0.3d0) cycle
 
       bndlist(0) = bndlist(0) + 1
       bndlist(bndlist(0)) = jgd
-      bndordr(bndlist(0)) = BO(0,i,j1)
+      bndordr(bndlist(0)) = BO(0,j1,i)
    enddo
 
    BNDOneLine=""

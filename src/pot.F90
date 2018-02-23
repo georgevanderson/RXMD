@@ -113,7 +113,7 @@ do i=1, copyptr(6)
   do j1=1, nbrlist(0,i)
      j=nbrlist(j1,i)
      dr(1:3) = pos(1:3,i) - pos(1:3,j)
-     ff(1:3) = ccbnd(i)*dBOp(i,j1)*dr(1:3)
+     ff(1:3) = ccbnd(i)*dBOp(j1,i)*dr(1:3)
      f(1:3,i) = f(1:3,i) - ff(1:3)
      f(1:3,j) = f(1:3,j) + ff(1:3)
   enddo
@@ -204,8 +204,8 @@ do i=1, NATOMS
       j = nbrlist(j1,i)
       jty = itype(j)
       inxn = inxn2(ity,jty)
-      sum_ovun1 = sum_ovun1 + povun1(inxn)*Desig(inxn)*BO(0,i,j1)
-      sum_ovun2 = sum_ovun2 + (delta(j)-deltalp(j))*(BO(2,i,j1) + BO(3,i,j1))
+      sum_ovun1 = sum_ovun1 + povun1(inxn)*Desig(inxn)*BO(0,j1,i)
+      sum_ovun2 = sum_ovun2 + (delta(j)-deltalp(j))*(BO(2,j1,i) + BO(3,j1,i))
    enddo
 
 !--- Lone Pair
@@ -269,10 +269,10 @@ do i=1, NATOMS
       inxn = inxn2(ity,jty)
 
       CEover(5) = CEover(1)*povun1(inxn)*desig(inxn)
-      CEover(6) = CEover(4)*( 1.d0 - dDlp(j)) * (BO(2,i,j1) + BO(3,i,j1))
+      CEover(6) = CEover(4)*( 1.d0 - dDlp(j)) * (BO(2,j1,i) + BO(3,j1,i))
       CEover(7) = CEover(4)*( delta(j) - deltalp(j) )
 
-      CEunder(5) = CEunder(4)*(1.d0 - dDlp(j))*(BO(2,i,j1) + BO(3,i,j1))
+      CEunder(5) = CEunder(4)*(1.d0 - dDlp(j))*(BO(2,j1,i) + BO(3,j1,i))
       CEunder(6) = CEunder(4)*(delta(j)-deltalp(j)) 
  
       CElp_b = CElp(1) + CEover(3) + CEover(5) + CEunder(3)
@@ -342,7 +342,7 @@ do j=1, NATOMS
    sum_SBO1 = 0.d0
    do n1=1, nbrlist(0,j)
       sum_BO8 = sum_BO8 - BO(0,j,n1)**8.d0
-      sum_SBO1 = sum_SBO1 + BO(2,j,n1) + BO(3,j,n1)
+      sum_SBO1 = sum_SBO1 + BO(2,n1,j) + BO(3,n1,j)
    enddo
    prod_SBO = exp(sum_BO8)
 
@@ -351,7 +351,7 @@ do j=1, NATOMS
    do i1=1, nbrlist(0,j)-1
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-      BOij = BO(0,j,i1) - cutof2_esub
+      BOij = BO(0,i1,j) - cutof2_esub
       if(BOij>0.d0) then ! react.f, line 4827 
       i=nbrlist(i1,j)
       ity = itype(i)
@@ -362,10 +362,10 @@ do j=1, NATOMS
       do k1=i1+1, nbrlist(0,j)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-         BOjk = BO(0,j,k1)-cutof2_esub
+         BOjk = BO(0,k1,j)-cutof2_esub
 
          if(BOjk>0.d0) then !react.f, line 4830
-         if(BO(0,j,i1)*BO(0,j,k1)>cutof2_esub) then !react.f, line 4831
+         if(BO(0,i1,j)*BO(0,k1,j)>cutof2_esub) then !react.f, line 4831
 
          k=nbrlist(k1,j)
          kty = itype(k)
@@ -506,7 +506,7 @@ do j=1, NATOMS
             call ForceB(j,k1, k,j1, CE3body_b(2)) !BO_jk
 
             do n1=1, nbrlist(0,j)
-               coeff(1:3) = CE3body_d(1) + CEval(6)*BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
+               coeff(1:3) = CE3body_d(1) + CEval(6)*BO(0,n1,j)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
                n  = nbrlist(n1,j)
                j1 = nbrindx(n1,j)
@@ -570,7 +570,7 @@ do i=1, NATOMS
       j = nbrlist(j1,i)
       jty = itype(j)
 
-      if( (jty==2) .and. (BO(0,i,j1)>MINBO0) ) then
+      if( (jty==2) .and. (BO(0,j1,i)>MINBO0) ) then
 
           do kk=1, nbplist(0,i)
 
@@ -603,7 +603,7 @@ do i=1, NATOMS
                   sin_xhz4 = sin_ijk_half**4
                   cos_xhz1 = ( 1.d0 - cos_ijk )
    
-                  exp_hb2 = exp( -phb2(inxnhb)*BO(0,i,j1) )
+                  exp_hb2 = exp( -phb2(inxnhb)*BO(0,j1,i) )
                   exp_hb3 = exp( -phb3(inxnhb)*(r0hb(inxnhb)/rjk(0) + rjk(0)/r0hb(inxnhb) - 2.d0) )
    
                   PEhb = phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*sin_xhz4
@@ -629,7 +629,7 @@ do i=1, NATOMS
 
         enddo !do kk=1, nbplist(0,i)
 
-      endif ! if(BO(0,j,i1)>MINBO0)
+      endif ! if(BO(0,i1,j)>MINBO0)
    enddo 
 enddo
 !$omp end do
@@ -802,13 +802,13 @@ do i=1, NATOMS
         jty = itype(j)
         inxn = inxn2(ity, jty)
 
-        exp_be12 = exp( pbe1(inxn)*( 1.d0 - BO(1,i,j1)**pbe2(inxn) ) )
+        exp_be12 = exp( pbe1(inxn)*( 1.d0 - BO(1,j1,i)**pbe2(inxn) ) )
 
-        PEbo = - Desig(inxn)*BO(1,i,j1)*exp_be12 - Depi(inxn)*BO(2,i,j1) - Depipi(inxn)*BO(3,i,j1) 
+        PEbo = - Desig(inxn)*BO(1,j1,i)*exp_be12 - Depi(inxn)*BO(2,j1,i) - Depipi(inxn)*BO(3,j1,i) 
 
         PE(1) = PE(1) + PEbo
 
-        CEbo = -Desig(inxn)*exp_be12*( 1.d0 - pbe1(inxn)*pbe2(inxn)*BO(1,i,j1)**pbe2(inxn) )
+        CEbo = -Desig(inxn)*exp_be12*( 1.d0 - pbe1(inxn)*pbe2(inxn)*BO(1,j1,i)**pbe2(inxn) )
         coeff(1:3)= (/ CEbo, -Depi(inxn), -Depipi(inxn) /)
 
         i1 = nbrindx(j1,i)
@@ -870,8 +870,8 @@ do j=1,NATOMS
   do k1=1, nbrlist(0,j) 
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-     BOjk = BO(0,j,k1) - cutof2_esub
-     if(BO(0,j,k1) > cutof2_esub) then         !poten.f,line 1829,1830
+     BOjk = BO(0,k1,j) - cutof2_esub
+     if(BO(0,k1,j) > cutof2_esub) then         !poten.f,line 1829,1830
 
         k = nbrlist(k1,j)
         kid = gtype(k)
@@ -889,10 +889,10 @@ do j=1,NATOMS
         do i1=1, nbrlist(0,j)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-           BOij = BO(0,j,i1) - cutof2_esub
+           BOij = BO(0,i1,j) - cutof2_esub
 
 !--- NOTICE: cutoff condition to ignore bonding.
-           if((BO(0,j,i1)>cutof2_esub) .and. ((BO(0,j,i1)*BO(0,j,k1))>cutof2_esub)) then !poten.f from iv() calculataion
+           if((BO(0,i1,j)>cutof2_esub) .and. ((BO(0,i1,j)*BO(0,k1,j))>cutof2_esub)) then !poten.f from iv() calculataion
 
            i=nbrlist(i1,j)
 
@@ -917,10 +917,10 @@ do j=1,NATOMS
               do l1=1, nbrlist(0,k)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-                 BOkl = BO(0,k,l1) - cutof2_esub
+                 BOkl = BO(0,l1,k) - cutof2_esub
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
-                 if((BO(0,k,l1)>cutof2_esub).and.(BO(0,j,k1)*BO(0,k,l1)>cutof2_esub)) then !poten.f,line 1829,1830
+                 if((BO(0,l1,k)>cutof2_esub).and.(BO(0,k1,j)*BO(0,l1,k)>cutof2_esub)) then !poten.f,line 1829,1830
 
                  l=nbrlist(l1,k)
                  lty = itype(l)
@@ -929,7 +929,7 @@ do j=1,NATOMS
                  if ((inxn/=0).and.(i/=l).and.(j/=l)) then
 
 !--- NOTICE: cutoff condition to ignore bonding.
-                 if( (BO(0,j,i1)*(BO(0,j,k1)**2)*BO(0,k,l1)) > MINBO0) then
+                 if( (BO(0,i1,j)*(BO(0,k1,j)**2)*BO(0,l1,k)) > MINBO0) then
 
                  rkl(1:3) = pos(1:3,k) - pos(1:3,l)
                  rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
@@ -950,7 +950,7 @@ do j=1,NATOMS
                                            (BOkl-1.5d0)**2 ) )
 
 !--- NOTICE: pi-bond value used here is not the subtracted one but the original value. 
-                 btb2 = 2.d0 - BO(2,j,k1) - fn11         !<kn>
+                 btb2 = 2.d0 - BO(2,k1,j) - fn11         !<kn>
                  exp_tor1 = exp( ptor1(inxn)*btb2**2 )   !<kn>
 
 
@@ -1088,15 +1088,15 @@ do j1=1, nbrlist(0,i)
   j  = nbrlist(j1,i)
   i1 = nbrindx(j1,i)
 
-  Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
+  Cbond(1) = coeff*(A0(j1,i) + BO(0,j1,i)*A1(j1,i) )! Coeff of BOp
   dr(1:3) = pos(1:3,i)-pos(1:3,j)
-  ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
+  ff(1:3) = Cbond(1)*dBOp(j1,i)*dr(1:3)
 
   f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
   f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
-  Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
-  Cbond(3)=coeff*BO(0,i,j1)*A2(j,i1) ! Coeff of deltap_j
+  Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
+  Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
 !$omp atomic
   ccbnd(i)=ccbnd(i)+Cbond(2)
@@ -1121,17 +1121,17 @@ real(8),intent(IN) :: coeff
 
 real(8) :: Cbond(3),dr(3),ff(3)
 
-Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
+Cbond(1) = coeff*(A0(j1,i) + BO(0,j1,i)*A1(j1,i) )! Coeff of BOp
 
 dr(1:3) = pos(1:3,i) - pos(1:3,j)
-ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
+ff(1:3) = Cbond(1)*dBOp(j1,i)*dr(1:3)
 
 f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
 f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
 !--- A3 is not necessary anymore with the new BO def. 
-Cbond(2)=coeff*BO(0,i,j1)*A2(i,j1) ! Coeff of deltap_i
-Cbond(3)=coeff*BO(0,i,j1)*A2(j,i1) ! Coeff of deltap_j
+Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
+Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
 !$omp atomic
 ccbnd(i)=ccbnd(i)+Cbond(2)
@@ -1156,9 +1156,9 @@ real(8) :: Cbond(3),dr(3), ff(3),cBO(3),cf(3)
 !--- 2nd is for pi-bond order and 3rd is for pipi-bond order.
 cf(1:3) = (/ coeff(1), coeff(2)-coeff(1), coeff(3)-coeff(1) /)
 
-Cbond(1) = cf(1)*(A0(i,j1) + BO(0,i,j1)*A1(i,j1))*dBOp(i,j1)        & !full BO
-         + cf(2)*BO(2,i,j1)*( dln_BOp(2,i,j1)+A1(i,j1)*dBOp(i,j1) ) & !pi   BO
-         + cf(3)*BO(3,i,j1)*( dln_BOp(3,i,j1)+A1(i,j1)*dBOp(i,j1) )   !pipi BO
+Cbond(1) = cf(1)*(A0(j1,i) + BO(0,j1,i)*A1(j1,i))*dBOp(j1,i)        & !full BO
+         + cf(2)*BO(2,j1,i)*( dln_BOp(2,j1,i)+A1(j1,i)*dBOp(j1,i) ) & !pi   BO
+         + cf(3)*BO(3,j1,i)*( dln_BOp(3,j1,i)+A1(j1,i)*dBOp(j1,i) )   !pipi BO
 
 dr(1:3) = pos(1:3,i)-pos(1:3,j)
 ff(1:3) = Cbond(1)*dr(1:3)
@@ -1167,10 +1167,10 @@ f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
 f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 
 !--- 1st element is "full"-bond order.
-cBO(1:3) = (/cf(1)*BO(0,i,j1),  cf(2)*BO(2,i,j1),  cf(3)*BO(3,i,j1) /)
+cBO(1:3) = (/cf(1)*BO(0,j1,i),  cf(2)*BO(2,j1,i),  cf(3)*BO(3,j1,i) /)
 
-Cbond(2)=cBO(1)*A2(i,j1) + (cBO(2)+cBO(3))*A3(i,j1)
-Cbond(3)=cBO(1)*A2(j,i1) + (cBO(2)+cBO(3))*A3(j,i1)
+Cbond(2)=cBO(1)*A2(j1,i) + (cBO(2)+cBO(3))*A3(j1,i)
+Cbond(3)=cBO(1)*A2(i1,j) + (cBO(2)+cBO(3))*A3(i1,j)
 
 !$omp atomic
 ccbnd(i)=ccbnd(i)+Cbond(2)
