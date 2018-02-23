@@ -5,7 +5,7 @@ use atoms
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: pos(NBUFFER,3),v(NBUFFER,3)
+real(8),intent(in) :: pos(3,NBUFFER),v(NBUFFER,3)
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 if(isBinary) then
@@ -117,7 +117,7 @@ do i=1, NATOMS
    enddo
 
    BNDOneLine=""
-   write(BNDOneLine,200) igd, pos(i,1:3),nint(atype(i)),bndlist(0), &
+   write(BNDOneLine,200) igd, pos(1:3,i),nint(atype(i)),bndlist(0), &
          (bndlist(j1),bndordr(j1),j1=1,bndlist(0))
 
    ! remove space and add new_line
@@ -208,7 +208,7 @@ do i=1, NATOMS
   tt = q(i)
 
   igd = l2g(atype(i))
-  write(PDBOneLine,100)'ATOM  ',0, atmname(ity), igd, pos(i,1:3), tt, ss
+  write(PDBOneLine,100)'ATOM  ',0, atmname(ity), igd, pos(1:3,i), tt, ss
 
   PDBOneLine(PDBLineSize:PDBLineSize)=NEW_LINE('A')
   PDBAllLines=trim(PDBAllLines)//trim(PDBOneLine)
@@ -276,7 +276,7 @@ call system_clock(ti,tk)
 !--- allocate arrays
 if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
-if(.not.allocated(rreal)) call allocatord2d(rreal,1,NBUFFER,1,3)
+if(.not.allocated(rreal)) call allocatord2d(rreal,1,3,1,NBUFFER)
 if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
 if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
@@ -316,9 +316,9 @@ do iy=0,my-1
 do iz=0,mz-1
    do imos2=1,nMoS2
       ntot=ntot+1
-      rreal(ntot,1:3) = pos0(3*imos2-2:3*imos2)+(/ix,iy,iz/)  ! repeat unit cell
-      rreal(ntot,1:3) = rreal(ntot,1:3)+vID(1:3)*(/mx,my,mz/) ! adding the box origin
-      rreal(ntot,1:3) = rreal(ntot,1:3)*(/lata,latb,latc/) ! real coords
+      rreal(1:3,ntot) = pos0(3*imos2-2:3*imos2)+(/ix,iy,iz/)  ! repeat unit cell
+      rreal(1:3,ntot) = rreal(1:3,ntot)+vID(1:3)*(/mx,my,mz/) ! adding the box origin
+      rreal(1:3,ntot) = rreal(1:3,ntot)*(/lata,latb,latc/) ! real coords
       atype(ntot) = dble(atype0(imos2)) + (iigd+ntot)*1d-13
    enddo 
 enddo; enddo; enddo
@@ -364,7 +364,7 @@ integer,allocatable :: idata(:)
 real(8),allocatable :: dbuf(:)
 real(8) :: ddata(6), d10(10)
 
-real(8) :: rnorm(NBUFFER,3), mat(3,3)
+real(8) :: rnorm(3,NBUFFER), mat(3,3)
 integer :: j
 
 integer :: ti,tj,tk
@@ -420,7 +420,7 @@ call MPI_File_Read(fh,dbuf,10*NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr
 
 if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
-if(.not.allocated(rreal)) call allocatord2d(rreal,1,NBUFFER,1,3)
+if(.not.allocated(rreal)) call allocatord2d(rreal,1,3,1,NBUFFER)
 if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
 if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
@@ -429,7 +429,7 @@ f(:,:)=0.0
 
 do i=1, NATOMS
     i1=10*(i-1)
-    rnorm(i,1:3)=dbuf(i1+1:i1+3)
+    rnorm(1:3,i)=dbuf(i1+1:i1+3)
     v(i,1:3)=dbuf(i1+4:i1+6)
     q(i)=dbuf(i1+7)
     atype(i)=dbuf(i1+8)
@@ -463,7 +463,7 @@ use atoms
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: rreal(NBUFFER,3),v(NBUFFER,3)
+real(8),intent(in) :: rreal(3,NBUFFER),v(NBUFFER,3)
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i,j
@@ -477,7 +477,7 @@ integer,allocatable :: ldata(:),gdata(:)
 real(8) :: ddata(6)
 real(8),allocatable :: dbuf(:)
 
-real(8) :: rnorm(NBUFFER,3)
+real(8) :: rnorm(3,NBUFFER)
 
 integer :: ti,tj,tk
 call system_clock(ti,tk)
@@ -534,7 +534,7 @@ call MPI_File_Seek(fh,offset,MPI_SEEK_SET,ierr)
 allocate(dbuf(10*NATOMS))
 do i=1, NATOMS
    j = (i - 1)*10
-   dbuf(j+1:j+3)=rnorm(i,1:3)
+   dbuf(j+1:j+3)=rnorm(1:3,i)
    dbuf(j+4:j+6)=v(i,1:3)
    dbuf(j+7)=q(i)
    dbuf(j+8)=atype(i)

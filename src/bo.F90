@@ -3,7 +3,7 @@ SUBROUTINE BOCALC(nlayer, atype, pos)
 use parameters; use atoms
 !--------------------------------------------------------------------------------------------
 integer,intent(in) :: nlayer
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+real(8),intent(in) :: atype(NBUFFER), pos(3,NBUFFER)
 
 integer :: ti,tj,tk
 
@@ -59,7 +59,7 @@ do i=1, copyptr(6)
 
         i1 = nbrindx(i,j1)
 
-        dr(1:3) = pos(i,1:3) - pos(j,1:3)
+        dr(1:3) = pos(1:3,i) - pos(1:3,j)
         dr2= sum(dr(1:3)*dr(1:3))
 
         if(dr2 <= rc2(inxn)) then

@@ -14,7 +14,7 @@ use parameters
 !-------------------------------------------------------------------------------
 implicit none
 
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+real(8),intent(in) :: atype(NBUFFER), pos(3,NBUFFER)
 real(8),intent(out) :: q(NBUFFER)
 
 real(8) :: fpqeq(NBUFFER)
@@ -204,8 +204,8 @@ do i=1, NATOMS
 
    if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
 
-   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
-   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
+   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(1:3,i) ! Eq. (37)
+   shelli(1:3) = pos(1:3,i) + spos(1:3,i)
 
    do j1 = 1, nbplist(i,0)
 
@@ -213,11 +213,11 @@ do i=1, NATOMS
       jty = nint(atype(j))
 
       qjc = q(j) + Zpqeq(jty)
-      shellj(1:3) = pos(j,1:3) + spos(j,1:3)
+      shellj(1:3) = pos(1:3,j) + spos(1:3,j)
 
       ! j-atom can be either polarizable or non-polarizable. In either case,
       ! there will be force on i-shell from j-core.  qjc takes care of the difference.  Eq. (38)
-      dr(1:3)=shelli(1:3)-pos(j,1:3)
+      dr(1:3)=shelli(1:3)-pos(1:3,j)
       call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Esc, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
 
       ff(1:3)=-Cclmb0*sf(1:3)*qjc*Zpqeq(ity)
@@ -240,7 +240,7 @@ enddo
 !--- update shell positions after finishing the shell-force calculation.  Eq. (39)
 do i=1, NATOMS
    ity = nint(atype(i))
-   if( isPolarizable(ity) ) spos(i,1:3) = spos(i,1:3) + sforce(i,1:3)/Kspqeq(ity)
+   if( isPolarizable(ity) ) spos(1:3,i) = spos(1:3,i) + sforce(i,1:3)/Kspqeq(ity)
 enddo
 
 
@@ -288,7 +288,7 @@ do c3=0, nbcc(3)-1
       do n=1, nbnacell(c4,c5,c6)
 
          if(i/=j) then
-            dr(1:3) = pos(i,1:3) - pos(j,1:3)
+            dr(1:3) = pos(1:3,i) - pos(1:3,j)
             dr2 =  sum(dr(1:3)*dr(1:3))
 
             if(dr2 < rctap2) then
@@ -315,7 +315,7 @@ do c3=0, nbcc(3)-1
 
                ! contribution from C(r_icjc) and C(r_icjs) if j-atom is polarizable
                if( isPolarizable(jty) ) then 
-                  dr(1:3)=pos(i,1:3) - pos(j,1:3) - spos(j,1:3) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
+                  dr(1:3)=pos(1:3,i) - pos(1:3,j) - spos(1:3,j) ! pos(i,1:3)-(pos(j,1:3)+spos(j,1:3))  
                   call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(jty,ity),pqeqs,inxnpqeq(jty, ity),TBL_Eclmb_psc,ff)
 
                   fpqeq(i) = fpqeq(i) - Cclmb0_qeq * pqeqs * Zpqeq(jty) ! Eq. 30
@@ -373,9 +373,9 @@ do i=1, NATOMS
 
 !--- for PQEq
    qic = q(i) + Zpqeq(ity)
-   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
+   shelli(1:3) = pos(1:3,i) + spos(1:3,i)
 
-   dr2 = sum(spos(i,1:3)*spos(i,1:3)) ! distance between core-and-shell for i-atom
+   dr2 = sum(spos(1:3,i)*spos(1:3,i)) ! distance between core-and-shell for i-atom
 
    Est = Est + chi(ity)*q(i) + 0.5d0*eta_ity*q(i)*q(i)
 
@@ -385,7 +385,7 @@ do i=1, NATOMS
 
 !--- for PQEq
       qjc = q(j) + Zpqeq(jty)
-      shellj(1:3) = pos(j,1:3) + spos(j,1:3)
+      shellj(1:3) = pos(1:3,j) + spos(1:3,j)
 
       Ccicj = 0.d0; Csicj=0.d0; Csisj=0.d0
 
@@ -393,7 +393,7 @@ do i=1, NATOMS
       Ccicj = Cclmb0_qeq*Ccicj*qic*qjc*0.5d0
 
       if(isPolarizable(ity)) then
-         dr(1:3)=shelli(1:3)-pos(j,1:3)
+         dr(1:3)=shelli(1:3)-pos(1:3,j)
          call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Csicj,inxnpqeq(ity,jty),TBL_Eclmb_psc,ff)
          Csicj=-Cclmb0_qeq*Csicj*qic*Zpqeq(jty)
 

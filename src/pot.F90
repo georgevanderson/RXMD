@@ -7,7 +7,7 @@ use pqeq_vars
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: pos(NBUFFER,3)
+real(8),intent(in) :: pos(3,NBUFFER)
 real(8),intent(inout) :: f(3,NBUFFER)
 
 real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array dimension matches
@@ -67,12 +67,12 @@ if(isEfield) call EEfield(PE(13),NATOMS,pos,q,f,atype,Eev_kcal)
 CALL ForceBondedTerms(NMINCELL)
 
 do i=1, NBUFFER
-   astr(1)=astr(1)+pos(i,1)*f(1,i)
-   astr(2)=astr(2)+pos(i,2)*f(2,i)
-   astr(3)=astr(3)+pos(i,3)*f(3,i)
-   astr(4)=astr(4)+pos(i,2)*f(3,i)
-   astr(5)=astr(5)+pos(i,3)*f(1,i)
-   astr(6)=astr(6)+pos(i,1)*f(2,i)
+   astr(1)=astr(1)+pos(1,i)*f(1,i)
+   astr(2)=astr(2)+pos(2,i)*f(2,i)
+   astr(3)=astr(3)+pos(3,i)*f(3,i)
+   astr(4)=astr(4)+pos(2,i)*f(3,i)
+   astr(5)=astr(5)+pos(3,i)*f(1,i)
+   astr(6)=astr(6)+pos(1,i)*f(2,i)
 enddo
 
 CALL COPYATOMS(MODE_CPBK,[0.d0, 0.d0, 0.d0], atype, pos, vdummy, f, q) 
@@ -80,7 +80,7 @@ CALL COPYATOMS(MODE_CPBK,[0.d0, 0.d0, 0.d0], atype, pos, vdummy, f, q)
 #ifdef RFDUMP
 open(81,file="rfdump"//trim(rankToString(myid))//".txt")
 do i=1, NATOMS
-   write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'pos',nint(atype(i)),pos(i,1:3)
+   write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'pos',nint(atype(i)),pos(1:3,i)
 enddo
 do i=1, NATOMS
    write(81,'(i6,1x,a3,i6,7f20.12)') gtype(i),'frc',nint(atype(i)),f(1:3,i)
@@ -112,7 +112,7 @@ do i=1, copyptr(6)
 
   do j1=1, nbrlist(i,0)
      j=nbrlist(i,j1)
-     dr(1:3) = pos(i,1:3) - pos(j,1:3)
+     dr(1:3) = pos(1:3,i) - pos(1:3,j)
      ff(1:3) = ccbnd(i)*dBOp(i,j1)*dr(1:3)
      f(1:3,i) = f(1:3,i) - ff(1:3)
      f(1:3,j) = f(1:3,j) + ff(1:3)
@@ -356,7 +356,7 @@ do j=1, NATOMS
       i=nbrlist(j,i1)
       ity = itype(i)
 
-      rij(1:3) = pos(i,1:3) - pos(j,1:3)
+      rij(1:3) = pos(1:3,i) - pos(1:3,j)
       rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
 
       do k1=i1+1, nbrlist(j,0)
@@ -370,7 +370,7 @@ do j=1, NATOMS
          k=nbrlist(j,k1)
          kty = itype(k)
 
-         rjk(1:3) = pos(j,1:3) - pos(k,1:3)
+         rjk(1:3) = pos(1:3,j) - pos(1:3,k)
          rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )  
 
          cos_ijk = -sum( rij(1:3)*rjk(1:3) ) / ( rij(0) * rjk(0) ) 
@@ -582,15 +582,15 @@ do i=1, NATOMS
 
             if ( (j/=k).and.(i/=k).and.(inxnhb/=0) ) then
 
-               rik(1:3) = pos(i,1:3) - pos(k,1:3)
+               rik(1:3) = pos(1:3,i) - pos(1:3,k)
                rik2 = sum(rik(1:3)*rik(1:3))
 
                if(rik2<rchb2) then
    
-                  rjk(1:3) = pos(j,1:3) - pos(k,1:3)
+                  rjk(1:3) = pos(1:3,j) - pos(1:3,k)
                   rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
    
-                  rij(1:3) = pos(i,1:3) - pos(j,1:3)
+                  rij(1:3) = pos(1:3,i) - pos(1:3,j)
                   rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )  
    
                   cos_ijk = -sum( rij(1:3)*rjk(1:3) ) / (rij(0) * rjk(0) ) 
@@ -679,7 +679,7 @@ do i=1, NATOMS
    
    Eshell = 0.d0
    if(isPolarizable(ity)) then
-      dr2 = sum( spos(i,1:3)*spos(i,1:3) )
+      dr2 = sum( spos(1:3,i)*spos(1:3,i) )
       Eshell = 0.5d0*Kspqeq(ity)*dr2
    endif
 
@@ -694,7 +694,7 @@ do i=1, NATOMS
 
          if(iid<jid) then
 
-            dr(1:3) = pos(i,1:3) - pos(j,1:3)
+            dr(1:3) = pos(1:3,i) - pos(1:3,j)
             dr2 = sum(dr(1:3)*dr(1:3))
 
             !if(dr2<=rctap2) then
@@ -728,21 +728,21 @@ do i=1, NATOMS
                Ecc=Cclmb0*Ecc*qij
 
                if( isPolarizable(ity) ) then
-                   drsc(1:3) = dr(1:3) + spos(i,1:3) ! (rc(i) + rs(i)) - rc(j)
+                   drsc(1:3) = dr(1:3) + spos(1:3,i) ! (rc(i) + rs(i)) - rc(j)
                    call get_coulomb_and_dcoulomb_pqeq(drsc, alphasc(ity,jty), Esc, inxnpqeq(ity,jty), TBL_Eclmb_psc, fsc)
                    fsc(1:3)=-Cclmb0*Zpqeq(ity)*qjc*fsc(1:3)
                    Esc=-Cclmb0*Esc*Zpqeq(ity)*qjc
                endif
 
                if(isPolarizable(jty)) then
-                   drcs(1:3) = dr(1:3) - spos(j,1:3) ! rc(i) - (rc(j) + rs(j))
+                   drcs(1:3) = dr(1:3) - spos(1:3,j) ! rc(i) - (rc(j) + rs(j))
                    call get_coulomb_and_dcoulomb_pqeq(drcs, alphasc(jty,ity), Ecs, inxnpqeq(jty,ity), TBL_Eclmb_psc, fcs)
                    fcs(1:3)=-Cclmb0*Zpqeq(jty)*qic*fcs(1:3)
                    Ecs=-Cclmb0*Ecs*qic*Zpqeq(jty)
                endif
 
                if( isPolarizable(ity) .and. isPolarizable(jty) ) then
-                   drss(1:3) = dr(1:3) + spos(i,1:3) - spos(j,1:3) ! (rc(i) + rs(i)) - (rc(j) + rs(j))
+                   drss(1:3) = dr(1:3) + spos(1:3,i) - spos(1:3,j) ! (rc(i) + rs(i)) - (rc(j) + rs(j))
                    call get_coulomb_and_dcoulomb_pqeq(drss, alphass(ity,jty), Ess, inxnpqeq(ity,jty), TBL_Eclmb_pss, fss)
                    fss(1:3)=Cclmb0*Zpqeq(ity)*Zpqeq(jty)*fss(1:3)
                    Ess=Cclmb0*Ess*Zpqeq(ity)*Zpqeq(jty)
@@ -883,7 +883,7 @@ do j=1,NATOMS
         delta_ang_k = delta(k) + Val(kty) - Valangle(kty)
         delta_ang_jk = delta_ang_j + delta_ang_k  
 
-        rjk(1:3) = pos(j,1:3) - pos(k,1:3)
+        rjk(1:3) = pos(1:3,j) - pos(1:3,k)
         rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
          
         do i1=1, nbrlist(j,0)
@@ -900,7 +900,7 @@ do j=1,NATOMS
 
               ity = itype(i)
 
-              rij(1:3) = pos(i,1:3) - pos(j,1:3)
+              rij(1:3) = pos(1:3,i) - pos(1:3,j)
               rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
 
 !--- Calculate the angle i-j-k
@@ -931,7 +931,7 @@ do j=1,NATOMS
 !--- NOTICE: cutoff condition to ignore bonding.
                  if( (BO(0,j,i1)*(BO(0,j,k1)**2)*BO(0,k,l1)) > MINBO0) then
 
-                 rkl(1:3) = pos(k,1:3) - pos(l,1:3)
+                 rkl(1:3) = pos(1:3,k) - pos(1:3,l)
                  rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
 
                  exp_tor2(1) = exp(-ptor2(inxn)*BOij)  ! i-j
@@ -1089,7 +1089,7 @@ do j1=1, nbrlist(i,0)
   i1 = nbrindx(i,j1)
 
   Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
-  dr(1:3) = pos(i,1:3)-pos(j,1:3)
+  dr(1:3) = pos(1:3,i)-pos(1:3,j)
   ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
 
   f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
@@ -1123,7 +1123,7 @@ real(8) :: Cbond(3),dr(3),ff(3)
 
 Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
 
-dr(1:3) = pos(i,1:3) - pos(j,1:3)
+dr(1:3) = pos(1:3,i) - pos(1:3,j)
 ff(1:3) = Cbond(1)*dBOp(i,j1)*dr(1:3)
 
 f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
@@ -1160,7 +1160,7 @@ Cbond(1) = cf(1)*(A0(i,j1) + BO(0,i,j1)*A1(i,j1))*dBOp(i,j1)        & !full BO
          + cf(2)*BO(2,i,j1)*( dln_BOp(2,i,j1)+A1(i,j1)*dBOp(i,j1) ) & !pi   BO
          + cf(3)*BO(3,i,j1)*( dln_BOp(3,i,j1)+A1(i,j1)*dBOp(i,j1) )   !pipi BO
 
-dr(1:3) = pos(i,1:3)-pos(j,1:3)
+dr(1:3) = pos(1:3,i)-pos(1:3,j)
 ff(1:3) = Cbond(1)*dr(1:3)
 
 f_private(1:3,i) = f_private(1:3,i) - ff(1:3)

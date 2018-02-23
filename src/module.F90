@@ -424,7 +424,7 @@ lata,latb,latc,lalpha,lbeta,lgamma)
 implicit none
 !------------------------------------------------------------------------------
 integer,intent(in) :: step, NATOMS, myrank, NBUFFER
-real(8),intent(in) :: pos(NBUFFER,3),spos(NBUFFER,3),atype(NBUFFER),q(NBUFFER)
+real(8),intent(in) :: pos(3,NBUFFER),spos(3,NBUFFER),atype(NBUFFER),q(NBUFFER)
 real(8),intent(in) :: lata,latb,latc,lalpha,lbeta,lgamma
 
 integer :: i,l2g
@@ -438,7 +438,7 @@ open(111,file="DAT/"//a4//"-"//a9//".shell")
 write(111,'(i6,6f12.6)') NATOMS,lata,latb,latc,lalpha,lbeta,lgamma
 do i=1, NATOMS
    write(111,'(i6,i3,3f12.6,1x,3f12.6,1x,f12.6)') &
-      l2g(atype(i)), nint(atype(i)),pos(i,1:3),spos(i,1:3),q(i)
+      l2g(atype(i)), nint(atype(i)),pos(1:3,i),spos(1:3,i),q(i)
 enddo
 close(111)
 
@@ -465,7 +465,7 @@ subroutine EEfield(Etotal,NATOMS,pos,q,f,atype,Eev_kcal)
 implicit none 
 !-------------------------------------------------------------------------------------------
 integer,intent(in) :: NATOMS
-real(8),intent(in) :: pos(NATOMS,3),q(NATOMS),atype(NATOMS),Eev_kcal
+real(8),intent(in) :: pos(3,NATOMS),q(NATOMS),atype(NATOMS),Eev_kcal
 
 integer :: i, ity
 
@@ -483,7 +483,7 @@ do i=1, NATOMS
    Eforce  = -qic*eFieldStrength*Eev_kcal
 
    if(isPolarizable(ity)) then
-      shellix = pos(i,eFieldDir) + spos(i,eFieldDir)
+      shellix = pos(eFieldDir,i) + spos(eFieldDir,i)
       Eforce  = Eforce  + Zpqeq(ity)*eFieldStrength*Eev_kcal
    endif
 
@@ -597,11 +597,12 @@ enddo
 end subroutine
 
 !-------------------------------------------------------------------------------------------
-subroutine initialize_pqeq(chi,eta)
+subroutine initialize_pqeq(chi,eta,myid)
 implicit none
 !-------------------------------------------------------------------------------------------
 integer :: ity,jty,icounter
 real(8) :: chi(ntype_pqeq),eta(ntype_pqeq)
+integer,intent(in) :: myid
 
 integer :: i,inxn
 real(8) :: Acc,Asc,Ass
@@ -613,15 +614,19 @@ call set_alphaij_pqeq()
 !--- for PQEq
 do ity = 1, ntype_pqeq
   if( .not. isPolarizable(ity) ) then
-    print'(a,i3,a)','atom type ', ity, ' is not polarizable. Setting Z & K to zero.'
+    if(myid==0) then
+      print'(a,i3,a)','atom type ', ity, ' is not polarizable. Setting Z & K to zero.'
+    endif
     Zpqeq(ity)=0.d0
     Kspqeq(ity)=0.d0
   else
-    print'(a)','updating chi and eta with PQEq parameter'
+    if(myid==0) then
+      print'(a)','updating chi and eta with PQEq parameter'
 
-    print'(a,4f12.6)', &
-      'chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity) :', &
-       chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity)
+      print'(a,4f12.6)', &
+        'chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity) :', &
+         chi(ity),X0pqeq(ity), eta(ity),J0pqeq(ity)
+    endif
 
     chi(ity)=X0pqeq(ity)
     eta(ity)=J0pqeq(ity)

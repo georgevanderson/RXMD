@@ -64,7 +64,7 @@ do nstep=0, ntime_step-1
    qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(q(1:NATOMS)-qsfp(1:NATOMS))
    qsfp(1:NATOMS)=qsfp(1:NATOMS)+dt*qsfv(1:NATOMS)
 
-   pos(1:NATOMS,1:3)=pos(1:NATOMS,1:3)+dt*v(1:NATOMS,1:3)
+   pos(1:3,1:NATOMS)=pos(1:3,1:NATOMS)+dt*v(1:NATOMS,1:3)
 
 !--- migrate atoms after positions are updated
    call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],atype, pos, v, f, q)
@@ -309,7 +309,7 @@ integer,intent(out) :: headAtom(-NLAYERS:Ncells(1)-1+NLAYERS, &
                                 -NLAYERS:Ncells(2)-1+NLAYERS, &
                                 -NLAYERS:Ncells(3)-1+NLAYERS) 
 
-real(8) :: rnorm(NBUFFER,3)
+real(8) :: rnorm(3,NBUFFER)
 integer :: n, l(3), j
 
 integer :: ti,tj,tk
@@ -324,7 +324,7 @@ do n=1, copyptr(6)
 
    if(nint(atype(n))==0) cycle
 
-   l(1:3) = floor(rnorm(n,1:3)/cellDims(1:3))
+   l(1:3) = floor(rnorm(1:3,n)/cellDims(1:3))
 
    atomList(n) = headAtom(l(1), l(2), l(3))
    headAtom(l(1), l(2), l(3)) = n
@@ -343,7 +343,7 @@ use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 integer,intent(in) :: nlayer
-real(8),intent(in) :: atype(NBUFFER), pos(NBUFFER,3)
+real(8),intent(in) :: atype(NBUFFER), pos(3,NBUFFER)
 
 integer :: c1,c2,c3, ic(3), c4, c5, c6
 integer :: n, n1, m, m1, nty, mty, inxn
@@ -379,7 +379,7 @@ DO c3=-nlayer, cc(3)-1+nlayer
              nty = nint(atype(n))
              inxn = inxn2(mty, nty)
 
-             dr(1:3) = pos(n,1:3) - pos(m,1:3) 
+             dr(1:3) = pos(1:3,n) - pos(1:3,m) 
              dr2 = sum(dr(1:3)*dr(1:3))
 
              if(dr2<rc2(inxn)) then 
@@ -441,7 +441,7 @@ use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 
-real(8),intent(in) :: pos(NBUFFER,3)
+real(8),intent(in) :: pos(3,NBUFFER)
 
 integer :: c1,c2,c3,c4,c5,c6,i,j,m,n,mn,iid,jid
 integer :: l2g
@@ -471,7 +471,7 @@ do c3=0, nbcc(3)-1
 
             !if(i<j .or. NATOMS<j) then
             if(i/=j) then
-               dr(1:3) = pos(i,1:3) - pos(j,1:3)
+               dr(1:3) = pos(1:3,i) - pos(1:3,j)
                dr2 = sum(dr(1:3)*dr(1:3))
 
                if(dr2<=rctap2) then
@@ -501,7 +501,7 @@ use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 
-real(8) :: atype(NBUFFER), pos(NBUFFER,3),v(NBUFFER,3)
+real(8) :: atype(NBUFFER), pos(3,NBUFFER),v(NBUFFER,3)
 
 integer :: i,ity
 real(8) :: com(3), Gcom(3), intsr(3,3), Gintsr(3,3), intsr_i(3,3), angm(3), Gangm(3), angv(3), mm, Gmm
@@ -514,7 +514,7 @@ mm=0.d0; Gmm=0.d0
 do i=1, NATOMS
    ity = nint(atype(i))
    mm = mm + mass(ity)
-   com(1:3) = mass(ity)*pos(i,1:3)
+   com(1:3) = mass(ity)*pos(1:3,i)
 enddo
 
 call MPI_ALLREDUCE(mm, Gmm, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
@@ -527,7 +527,7 @@ angm(:)=0.d0;    Gangm(:)=0.d0
 intsr(:,:)=0.d0; Gintsr(:,:)=0.d0
 
 do i=1, NATOMS
-   dr(1:3) = pos(i,1:3) - Gcom(1:3)
+   dr(1:3) = pos(1:3,i) - Gcom(1:3)
    
    angm(1) = mass(ity)*( dr(2)*v(i,3)-dr(3)*v(i,2) )
    angm(2) = mass(ity)*( dr(3)*v(i,1)-dr(1)*v(i,3) )
@@ -559,7 +559,7 @@ angv(3) = sum(intsr_i(3,1:3)*angm(1:3))
 
 !--- correct rotational motion wrt CoM.
 do i=1,NATOMS
-   dr(1:3) = pos(i,1:3) - Gcom(1:3)
+   dr(1:3) = pos(1:3,i) - Gcom(1:3)
    dv(1) = angv(2)*dr(3) - angv(3)*dr(2)
    dv(2) = angv(3)*dr(1) - angv(1)*dr(3)
    dv(3) = angv(1)*dr(2) - angv(2)*dr(1)
@@ -612,19 +612,19 @@ end function
 subroutine xu2xs(rreal, rnorm, nmax)
 ! update normalized coordinate from real coordinate. Subtract obox to make them local. 
 use atoms
-real(8),intent(in) :: rreal(NBUFFER,3)
-real(8),intent(out) :: rnorm(NBUFFER,3)
+real(8),intent(in) :: rreal(3,NBUFFER)
+real(8),intent(out) :: rnorm(3,NBUFFER)
 integer,intent(in) :: nmax
 
 !--------------------------------------------------------------------------------------------------------------
 real(8) :: rr(3)
 
 do i=1,nmax
-   rr(1:3) = rreal(i,1:3)
-   rnorm(i,1)=sum(HHi(1,1:3)*rr(1:3))
-   rnorm(i,2)=sum(HHi(2,1:3)*rr(1:3))
-   rnorm(i,3)=sum(HHi(3,1:3)*rr(1:3))
-   rnorm(i,1:3) = rnorm(i,1:3) - OBOX(1:3)
+   rr(1:3) = rreal(1:3,i)
+   rnorm(1,i)=sum(HHi(1,1:3)*rr(1:3))
+   rnorm(2,i)=sum(HHi(2,1:3)*rr(1:3))
+   rnorm(3,i)=sum(HHi(3,1:3)*rr(1:3))
+   rnorm(1:3,i) = rnorm(1:3,i) - OBOX(1:3)
 enddo
 
 end subroutine
@@ -634,17 +634,17 @@ subroutine xs2xu(rnorm,rreal,nmax)
 ! update real coordinate from normalized coordinate
 use atoms
 !--------------------------------------------------------------------------------------------------------------
-real(8),intent(in) :: rnorm(NBUFFER,3)
-real(8),intent(out) :: rreal(NBUFFER,3)
+real(8),intent(in) :: rnorm(3,NBUFFER)
+real(8),intent(out) :: rreal(3,NBUFFER)
 integer,intent(in) :: nmax
 
 real(8) :: rr(3)
 
 do i=1,nmax 
-   rr(1:3) = rnorm(i,1:3) + OBOX(1:3)
-   rreal(i,1)=sum(HH(1,1:3,0)*rr(1:3))
-   rreal(i,2)=sum(HH(2,1:3,0)*rr(1:3))
-   rreal(i,3)=sum(HH(3,1:3,0)*rr(1:3))
+   rr(1:3) = rnorm(1:3,i) + OBOX(1:3)
+   rreal(1,i)=sum(HH(1,1:3,0)*rr(1:3))
+   rreal(2,i)=sum(HH(2,1:3,0)*rr(1:3))
+   rreal(3,i)=sum(HH(3,1:3,0)*rr(1:3))
 enddo
 
 end subroutine

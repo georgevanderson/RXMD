@@ -40,7 +40,7 @@ CTap(0:7)=(/1.d0, 0.d0, 0.d0, 0.d0,   -35.d0/(rctap)**4, &
           84.d0/(rctap)**5, -70.d0/(rctap)**6, &
           20.d0/(rctap)**7 /)
 
-call initialize_pqeq(chi,eta)
+call initialize_pqeq(chi,eta,myid)
 if(isEfield) call initialize_eField(myid)
 
 astr(:)=0.d0
@@ -127,7 +127,7 @@ enddo
 
 call allocatord1d(atype,1,NBUFFER)
 call allocatord1d(q,1,NBUFFER)
-call allocatord2d(pos,1,NBUFFER,1,3)
+call allocatord2d(pos,1,3,1,NBUFFER)
 call allocatord2d(v,1,NBUFFER,1,3)
 call allocatord2d(f,1,3,1,NBUFFER)
 !$omp parallel
@@ -135,7 +135,7 @@ call allocatord2d(f_private,1,3,1,NBUFFER)
 !$omp end parallel
 
 !--- For PQEq
-call allocatord2d(spos,1,NBUFFER,1,3)
+call allocatord2d(spos,1,3,1,NBUFFER)
 spos(:,:)=0.d0
 
 call allocatord1d(deltalp,1,NBUFFER)
