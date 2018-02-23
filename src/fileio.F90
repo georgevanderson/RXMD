@@ -5,7 +5,7 @@ use atoms
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: pos(3,NBUFFER),v(NBUFFER,3)
+real(8),intent(in) :: pos(3,NBUFFER),v(3,NBUFFER)
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 if(isBinary) then
@@ -199,7 +199,7 @@ do i=1, NATOMS
 
   ity = nint(atype(i))
 !--- calculate atomic temperature 
-  tt = hmas(ity)*sum(v(i,1:3)*v(i,1:3))
+  tt = hmas(ity)*sum(v(1:3,i)*v(1:3,i))
   tt = tt*UTEMP*1d-2 !scale down to use two decimals in PDB format 
 
 !--- sum up diagonal atomic stress components 
@@ -277,7 +277,7 @@ call system_clock(ti,tk)
 if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
 if(.not.allocated(rreal)) call allocatord2d(rreal,1,3,1,NBUFFER)
-if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
+if(.not.allocated(v)) call allocatord2d(v,1,3,1,NBUFFER)
 if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
 if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
@@ -421,7 +421,7 @@ call MPI_File_Read(fh,dbuf,10*NATOMS,MPI_DOUBLE_PRECISION,MPI_STATUS_IGNORE,ierr
 if(.not.allocated(atype)) call allocatord1d(atype,1,NBUFFER)
 if(.not.allocated(q)) call allocatord1d(q,1,NBUFFER)
 if(.not.allocated(rreal)) call allocatord2d(rreal,1,3,1,NBUFFER)
-if(.not.allocated(v)) call allocatord2d(v,1,NBUFFER,1,3)
+if(.not.allocated(v)) call allocatord2d(v,1,3,1,NBUFFER)
 if(.not.allocated(f)) call allocatord2d(f,1,3,1,NBUFFER)
 if(.not.allocated(qsfp)) call allocatord1d(qsfp,1,NBUFFER)
 if(.not.allocated(qsfv)) call allocatord1d(qsfv,1,NBUFFER)
@@ -430,7 +430,7 @@ f(:,:)=0.0
 do i=1, NATOMS
     i1=10*(i-1)
     rnorm(1:3,i)=dbuf(i1+1:i1+3)
-    v(i,1:3)=dbuf(i1+4:i1+6)
+    v(1:3,i)=dbuf(i1+4:i1+6)
     q(i)=dbuf(i1+7)
     atype(i)=dbuf(i1+8)
     qsfp(i)=dbuf(i1+9)
@@ -463,7 +463,7 @@ use atoms
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: rreal(3,NBUFFER),v(NBUFFER,3)
+real(8),intent(in) :: rreal(3,NBUFFER),v(3,NBUFFER)
 character(MAXPATHLENGTH),intent(in) :: fileNameBase
 
 integer :: i,j
@@ -535,7 +535,7 @@ allocate(dbuf(10*NATOMS))
 do i=1, NATOMS
    j = (i - 1)*10
    dbuf(j+1:j+3)=rnorm(1:3,i)
-   dbuf(j+4:j+6)=v(i,1:3)
+   dbuf(j+4:j+6)=v(1:3,i)
    dbuf(j+7)=q(i)
    dbuf(j+8)=atype(i)
    dbuf(j+9)=qsfp(i)

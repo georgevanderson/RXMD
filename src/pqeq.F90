@@ -189,12 +189,12 @@ implicit none
 !-----------------------------------------------------------------------------------------------------------------------
 integer :: i,ity,j,jty,j1,inxn
 real(8) :: shelli(3),shellj(3), qjc, clmb, dclmb, dr2
-real(8) :: sforce(NATOMS,3), sf(3), Esc, Ess
+real(8) :: sforce(3,NATOMS), sf(3), Esc, Ess
 real(8) :: ff(3)
 
 real(8) :: dr(3)
 
-sforce(1:NATOMS,1:3)=0.d0
+sforce(1:3,1:NATOMS)=0.d0
 do i=1, NATOMS
 
    ity = nint(atype(i))
@@ -202,9 +202,9 @@ do i=1, NATOMS
    ! if i-atom is not polarizable, no force acting on i-shell. 
    if( .not. isPolarizable(ity) ) cycle 
 
-   if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
+   if(isEfield) sforce(eFieldDir,i) = sforce(eFieldDir,i) + Zpqeq(ity)*eFieldStrength*Eev_kcal
 
-   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(1:3,i) ! Eq. (37)
+   sforce(1:3,i) = sforce(1:3,i) - Kspqeq(ity)*spos(1:3,i) ! Eq. (37)
    shelli(1:3) = pos(1:3,i) + spos(1:3,i)
 
    do j1 = 1, nbplist(i,0)
@@ -221,7 +221,7 @@ do i=1, NATOMS
       call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Esc, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
 
       ff(1:3)=-Cclmb0*sf(1:3)*qjc*Zpqeq(ity)
-      sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
+      sforce(1:3,i)=sforce(1:3,i)-ff(1:3)
 
       ! if j-atom is polarizable, there will be force on i-shell from j-shell. Eq. (38)
       if( isPolarizable(jty) ) then 
@@ -229,7 +229,7 @@ do i=1, NATOMS
          call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Ess, inxnpqeq(ity, jty), TBL_Eclmb_pss,sf)
 
          ff(1:3)=Cclmb0*sf(1:3)*Zpqeq(ity)*Zpqeq(jty)
-         sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
+         sforce(1:3,i)=sforce(1:3,i)-ff(1:3)
 
       endif
 
@@ -240,7 +240,7 @@ enddo
 !--- update shell positions after finishing the shell-force calculation.  Eq. (39)
 do i=1, NATOMS
    ity = nint(atype(i))
-   if( isPolarizable(ity) ) spos(1:3,i) = spos(1:3,i) + sforce(i,1:3)/Kspqeq(ity)
+   if( isPolarizable(ity) ) spos(1:3,i) = spos(1:3,i) + sforce(1:3,i)/Kspqeq(ity)
 enddo
 
 

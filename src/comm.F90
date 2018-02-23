@@ -31,7 +31,7 @@ implicit none
 integer,intent(IN) :: imode 
 real(8),intent(IN) :: dr(3)
 real(8) :: atype(NBUFFER), q(NBUFFER)
-real(8) :: rreal(3,NBUFFER),v(NBUFFER,3),f(3,NBUFFER)
+real(8) :: rreal(3,NBUFFER),v(3,NBUFFER),f(3,NBUFFER)
 
 real(8) :: pos(3,NBUFFER) ! <- normalized coordinate
 
@@ -101,7 +101,7 @@ if(imode==MODE_MOVE) then
       if(ity>0) then
         ni=ni+1
         pos(1:3,ni) = pos(1:3,i)
-        v(ni,1:3) = v(i,1:3)
+        v(1:3,ni) = v(1:3,i)
         atype(ni) = atype(i)
         q(ni) = q(i)
         qs(ni) = qs(i)
@@ -247,7 +247,7 @@ if(imode/=MODE_CPBK) then
         case(MODE_MOVE)
            sbuffer(ns+1:ns+3) = pos(1:3,n)
            sbuffer(ns+1+is) = sbuffer(ns+1+is) + sft
-           sbuffer(ns+4:ns+6) = v(n,1:3)
+           sbuffer(ns+4:ns+6) = v(1:3,n)
            sbuffer(ns+7) = atype(n)
            sbuffer(ns+8) = q(n)
            sbuffer(ns+9) = qs(n)
@@ -357,7 +357,7 @@ if(imode /= MODE_CPBK) then
       select case(imode)
          case(MODE_MOVE)
               pos(1:3,m) = rbuffer(ine+1:ine+3)
-              v(m,1:3) = rbuffer(ine+4:ine+6)
+              v(1:3,m) = rbuffer(ine+4:ine+6)
               atype(m) = rbuffer(ine+7)
               q(m)  = rbuffer(ine+8)
               qs(m) = rbuffer(ine+9)

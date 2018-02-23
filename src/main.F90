@@ -43,11 +43,11 @@ do nstep=0, ntime_step-1
         call OUTPUT(atype, pos, v, q, GetFileNameBase(current_step+nstep))
 
    if(mod(nstep,sstep)==0.and.mdmode==4) &
-      v(1:NATOMS,1:3)=vsfact*v(1:NATOMS,1:3)
+      v(1:3,1:NATOMS)=vsfact*v(1:3,1:NATOMS)
 
    if(mod(nstep,sstep)==0.and.mdmode==5) then
       ctmp = (treq*UTEMP0)/( GKE*UTEMP )
-      v(1:NATOMS,1:3)=sqrt(ctmp)*v(1:NATOMS,1:3)
+      v(1:3,1:NATOMS)=sqrt(ctmp)*v(1:3,1:NATOMS)
    endif
 
    if(mod(nstep,sstep)==0.and.(mdmode==0.or.mdmode==6)) &
@@ -64,7 +64,7 @@ do nstep=0, ntime_step-1
    qsfv(1:NATOMS)=qsfv(1:NATOMS)+0.5d0*dt*Lex_w2*(q(1:NATOMS)-qsfp(1:NATOMS))
    qsfp(1:NATOMS)=qsfp(1:NATOMS)+dt*qsfv(1:NATOMS)
 
-   pos(1:3,1:NATOMS)=pos(1:3,1:NATOMS)+dt*v(1:NATOMS,1:3)
+   pos(1:3,1:NATOMS)=pos(1:3,1:NATOMS)+dt*v(1:3,1:NATOMS)
 
 !--- migrate atoms after positions are updated
    call COPYATOMS(MODE_MOVE,[0.d0, 0.d0, 0.d0],atype, pos, v, f, q)
@@ -79,12 +79,12 @@ do nstep=0, ntime_step-1
 
    do i=1, NATOMS
       ity = nint(atype(i))
-      astr(1)=astr(1)+v(i,1)*v(i,1)*mass(ity)
-      astr(2)=astr(2)+v(i,2)*v(i,2)*mass(ity)
-      astr(3)=astr(3)+v(i,3)*v(i,3)*mass(ity)
-      astr(4)=astr(4)+v(i,2)*v(i,3)*mass(ity)
-      astr(5)=astr(5)+v(i,3)*v(i,1)*mass(ity)
-      astr(6)=astr(6)+v(i,1)*v(i,2)*mass(ity)
+      astr(1)=astr(1)+v(1,i)*v(1,i)*mass(ity)
+      astr(2)=astr(2)+v(2,i)*v(2,i)*mass(ity)
+      astr(3)=astr(3)+v(3,i)*v(3,i)*mass(ity)
+      astr(4)=astr(4)+v(2,i)*v(3,i)*mass(ity)
+      astr(5)=astr(5)+v(3,i)*v(1,i)*mass(ity)
+      astr(6)=astr(6)+v(1,i)*v(2,i)*mass(ity)
    end do
 
 !--- update velocity
@@ -212,14 +212,14 @@ use atoms
 !------------------------------------------------------------------------------
 implicit none
 
-real(8) :: atype(NBUFFER),v(NBUFFER,3),f(3,NBUFFER)
+real(8) :: atype(NBUFFER),v(3,NBUFFER),f(3,NBUFFER)
 
 integer :: i, ity
 real(8) :: dtf
 
 do i=1,NATOMS
    ity = nint(atype(i))
-   v(i,1:3) = v(i,1:3) + dtf*dthm(ity)*f(1:3,i)
+   v(1:3,i) = v(1:3,i) + dtf*dthm(ity)*f(1:3,i)
 enddo
 
 end subroutine
@@ -232,7 +232,7 @@ use atoms; use parameters; use MemoryAllocator
 implicit none
 
 real(8),intent(in) :: atype(NBUFFER), q(NBUFFER)
-real(8),intent(in) :: v(NBUFFER,3)
+real(8),intent(in) :: v(3,NBUFFER)
 
 integer :: i,ity,cstep
 real(8),save :: wt0
@@ -244,7 +244,7 @@ maxas(i,1)=NATOMS
 KE=0.d0
 do i=1, NATOMS
    ity=nint(atype(i))
-   KE = KE + hmas(ity)*sum(v(i,1:3)*v(i,1:3))
+   KE = KE + hmas(ity)*sum(v(1:3,i)*v(1:3,i))
 enddo
 qq=sum(q(1:NATOMS))
 
@@ -501,7 +501,7 @@ use atoms; use parameters
 !----------------------------------------------------------------------
 implicit none
 
-real(8) :: atype(NBUFFER), pos(3,NBUFFER),v(NBUFFER,3)
+real(8) :: atype(NBUFFER), pos(3,NBUFFER),v(3,NBUFFER)
 
 integer :: i,ity
 real(8) :: com(3), Gcom(3), intsr(3,3), Gintsr(3,3), intsr_i(3,3), angm(3), Gangm(3), angv(3), mm, Gmm
@@ -529,9 +529,9 @@ intsr(:,:)=0.d0; Gintsr(:,:)=0.d0
 do i=1, NATOMS
    dr(1:3) = pos(1:3,i) - Gcom(1:3)
    
-   angm(1) = mass(ity)*( dr(2)*v(i,3)-dr(3)*v(i,2) )
-   angm(2) = mass(ity)*( dr(3)*v(i,1)-dr(1)*v(i,3) )
-   angm(3) = mass(ity)*( dr(1)*v(i,2)-dr(2)*v(i,1) )
+   angm(1) = mass(ity)*( dr(2)*v(3,i)-dr(3)*v(2,i) )
+   angm(2) = mass(ity)*( dr(3)*v(1,i)-dr(1)*v(3,i) )
+   angm(3) = mass(ity)*( dr(1)*v(2,i)-dr(2)*v(1,i) )
 
    intsr(1,1) = mass(ity)*( dr(2)**2+dr(3)**2 )
    intsr(2,2) = mass(ity)*( dr(3)**2+dr(1)**2 )
@@ -564,7 +564,7 @@ do i=1,NATOMS
    dv(2) = angv(3)*dr(1) - angv(1)*dr(3)
    dv(3) = angv(1)*dr(2) - angv(2)*dr(1)
 
-   v(i,1:3) = v(i,1:3) - dv(1:3)
+   v(1:3,i) = v(1:3,i) - dv(1:3)
 enddo
 
 end subroutine
@@ -661,9 +661,9 @@ real(8) :: Ekinetic, ctmp
 
 do i=1, NATOMS
    ity=nint(atype(i))
-   Ekinetic=0.5d0*mass(ity)*sum(v(i,1:3)*v(i,1:3))
+   Ekinetic=0.5d0*mass(ity)*sum(v(1:3,i)*v(1:3,i))
    ctmp = (treq*UTEMP0)/( Ekinetic*UTEMP )
-   v(i,1:3)=sqrt(ctmp)*v(i,1:3)
+   v(1:3,i)=sqrt(ctmp)*v(1:3,i)
 enddo
 
 call LinearMomentum(atype, v)
@@ -677,7 +677,7 @@ use atoms; use parameters
 !-----------------------------------------------------------------------
 implicit none
 
-real(8) :: atype(NBUFFER), v(NBUFFER,3)
+real(8) :: atype(NBUFFER), v(3,NBUFFER)
 
 integer :: i,ity
 real(8) :: mm,vCM(3),sbuf(4),rbuf(4)
@@ -686,7 +686,7 @@ real(8) :: mm,vCM(3),sbuf(4),rbuf(4)
 vCM(:)=0.d0;  mm = 0.d0
 do i=1, NATOMS
    ity = nint(atype(i))
-   vCM(1:3)=vCM(1:3) + mass(ity)*v(i,1:3)
+   vCM(1:3)=vCM(1:3) + mass(ity)*v(1:3,i)
    mm = mm + mass(ity)
 enddo
 
@@ -699,7 +699,7 @@ vCM(:)=vCM(:)/mm
 
 !--- set the total momentum to be zero 
 do i=1, NATOMS
-   v(i,1:3) = v(i,1:3) - vCM(1:3)
+   v(1:3,i) = v(1:3,i) - vCM(1:3)
 enddo
 
 return
