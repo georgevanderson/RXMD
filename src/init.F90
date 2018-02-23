@@ -178,9 +178,9 @@ i8=NATOMS ! Convert 4 byte to 8 byte
 call MPI_ALLREDUCE(i8, GNATOMS, 1, MPI_INTEGER8, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
 !--- Linked List & Near Neighb Parameters
-call allocatori2d(nbrlist,1,NBUFFER,0,MAXNEIGHBS)
-call allocatori2d(nbrindx,1,NBUFFER,1,MAXNEIGHBS)
-call allocatori2d(nbplist,1,NBUFFER,0,MAXNEIGHBS10)
+call allocatori2d(nbrlist,0,MAXNEIGHBS,1,NBUFFER)
+call allocatori2d(nbrindx,1,MAXNEIGHBS,1,NBUFFER)
+call allocatori2d(nbplist,0,MAXNEIGHBS10,1,NBUFFER)
 call allocatori1d(llist,1,NBUFFER)
 call allocatori3d(header,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)
 call allocatori3d(nacell,-MAXLAYERS,cc(1)-1+MAXLAYERS,-MAXLAYERS,cc(2)-1+MAXLAYERS,-MAXLAYERS,cc(3)-1+MAXLAYERS)

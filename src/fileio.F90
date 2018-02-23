@@ -51,7 +51,7 @@ call system_clock(ti,tk)
 ! precompute the total # of neighbors
 m=0
 do i=1, NATOMS
-   do j1 = 1, nbrlist(i,0)
+   do j1 = 1, nbrlist(0,i)
 !--- don't count if BO is less than BNDcutoff.
        if(BO(0,i,j1) > BNDcutoff) then 
            m=m+1
@@ -101,8 +101,8 @@ do i=1, NATOMS
 
 !--- count the number bonds to be shown.
    bndlist(0)=0
-   do j1 = 1, nbrlist(i,0)
-      j = nbrlist(i,j1)
+   do j1 = 1, nbrlist(0,i)
+      j = nbrlist(j1,i)
       jty = nint(atype(j))
 
 !--- get global ID for j-atom

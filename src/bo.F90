@@ -49,15 +49,15 @@ enddo
 do i=1, copyptr(6)
    ity = nint(atype(i))
 
-   do j1=1, nbrlist(i,0)
+   do j1=1, nbrlist(0,i)
 
-     j = nbrlist(i,j1)
+     j = nbrlist(j1,i)
 
      if(j<i) then
         jty  = nint(atype(j))
         inxn = inxn2(ity, jty)
 
-        i1 = nbrindx(i,j1)
+        i1 = nbrindx(j1,i)
 
         dr(1:3) = pos(1:3,i) - pos(1:3,j)
         dr2= sum(dr(1:3)*dr(1:3))
@@ -159,9 +159,9 @@ do i=1, copyptr(6)
    exppboc1i = exp( -vpar1*deltap(i,1) )  !<kn>
    exppboc2i = exp( -vpar2*deltap(i,1) )  !<kn>
 
-   do j1=1, nbrlist(i,0)
+   do j1=1, nbrlist(0,i)
 
-      j=nbrlist(i,j1)
+      j=nbrlist(j1,i)
 
       if(j<i) then
 
@@ -170,7 +170,7 @@ do i=1, copyptr(6)
         exppboc1j = exp( -vpar1*deltap(j,1) )  !<kn>
         exppboc2j = exp( -vpar2*deltap(j,1) )  !<kn>
 
-        i1=nbrindx(i,j1)
+        i1=nbrindx(j1,i)
 
         inxn = inxn2(ity,jty)
 
@@ -282,7 +282,7 @@ do i=1, copyptr(6)
 
       endif !if(i<j)
 
-   enddo ! do j1=1,nbrlist(i,0) loop end
+   enddo ! do j1=1,nbrlist(0,i) loop end
 enddo
 !$omp end do
 
@@ -291,7 +291,7 @@ enddo
 !$omp do
 do i=1, copyptr(6)
    ity = nint(atype(i))
-   delta(i) = -Val(ity) + sum( BO(0,i,1:nbrlist(i,0)) )
+   delta(i) = -Val(ity) + sum( BO(0,i,1:nbrlist(0,i)) )
 enddo
 !$omp end do
 

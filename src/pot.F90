@@ -23,7 +23,7 @@ ccbnd(:) = 0.d0
 f(:,:) = 0.d0
 PE(:) = 0.d0
 
-!--- cache atoms and create linkedlist for bonding and non-bonding neighbor lists. 
+!--- cache atoms and create linkedlist for bonding and non-bonding neighbor list. 
 call COPYATOMS(MODE_COPY,NMINCELL*lcsize(1:3),atype,pos,vdummy,f,q) 
 
 call LINKEDLIST(atype, pos, lcsize, header, llist, nacell, cc, MAXLAYERS)
@@ -110,8 +110,8 @@ call system_clock(ti,tk)
 
 do i=1, copyptr(6)
 
-  do j1=1, nbrlist(i,0)
-     j=nbrlist(i,j1)
+  do j1=1, nbrlist(0,i)
+     j=nbrlist(j1,i)
      dr(1:3) = pos(1:3,i) - pos(1:3,j)
      ff(1:3) = ccbnd(i)*dBOp(i,j1)*dr(1:3)
      f(1:3,i) = f(1:3,i) - ff(1:3)
@@ -200,8 +200,8 @@ do i=1, NATOMS
 
    sum_ovun1 = 0.d0
    sum_ovun2 = 0.d0
-   do j1 = 1, nbrlist(i,0)
-      j = nbrlist(i, j1)
+   do j1 = 1, nbrlist(0,i)
+      j = nbrlist(j1,i)
       jty = itype(j)
       inxn = inxn2(ity,jty)
       sum_ovun1 = sum_ovun1 + povun1(inxn)*Desig(inxn)*BO(0,i,j1)
@@ -263,8 +263,8 @@ do i=1, NATOMS
 !          CEunder(:)=0.d0; PE(4)=0.d0
 
 !--- Force Calculation
-   do j1 = 1, nbrlist(i,0) 
-      j = nbrlist(i, j1) 
+   do j1 = 1, nbrlist(0,i) 
+      j = nbrlist(j1,i) 
       jty = itype(j)
       inxn = inxn2(ity,jty)
 
@@ -279,7 +279,7 @@ do i=1, NATOMS
       CElp_bpp = CEover(7) + CEunder(6)
       coeff(1:3) = CElp_b + (/0.d0, CElp_bpp, CElp_bpp/) 
 
-      i1=nbrindx(i,j1)
+      i1=nbrindx(j1,i)
       call ForceBbo(i,j1, j,i1, coeff)
 
       CElp_d  = CEover(6) + CEunder(5)
@@ -340,7 +340,7 @@ do j=1, NATOMS
 
    sum_BO8 = 0.d0
    sum_SBO1 = 0.d0
-   do n1=1, nbrlist(j,0)
+   do n1=1, nbrlist(0,j)
       sum_BO8 = sum_BO8 - BO(0,j,n1)**8.d0
       sum_SBO1 = sum_SBO1 + BO(2,j,n1) + BO(3,j,n1)
    enddo
@@ -348,18 +348,18 @@ do j=1, NATOMS
 
    delta_ang = delta(j) + Val(jty) - Valangle(jty)   
 
-   do i1=1, nbrlist(j,0)-1
+   do i1=1, nbrlist(0,j)-1
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
       BOij = BO(0,j,i1) - cutof2_esub
       if(BOij>0.d0) then ! react.f, line 4827 
-      i=nbrlist(j,i1)
+      i=nbrlist(i1,j)
       ity = itype(i)
 
       rij(1:3) = pos(1:3,i) - pos(1:3,j)
       rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
 
-      do k1=i1+1, nbrlist(j,0)
+      do k1=i1+1, nbrlist(0,j)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
          BOjk = BO(0,j,k1)-cutof2_esub
@@ -367,7 +367,7 @@ do j=1, NATOMS
          if(BOjk>0.d0) then !react.f, line 4830
          if(BO(0,j,i1)*BO(0,j,k1)>cutof2_esub) then !react.f, line 4831
 
-         k=nbrlist(j,k1)
+         k=nbrlist(k1,j)
          kty = itype(k)
 
          rjk(1:3) = pos(1:3,j) - pos(1:3,k)
@@ -499,17 +499,17 @@ do j=1, NATOMS
             CE3body_a = CEval(8)
 
 !--- Force calculation
-            j1 = nbrindx(j, i1)
+            j1 = nbrindx(i1,j)
             call ForceB(i,j1, j,i1, CE3body_b(1)) !BO_ij
 
-            j1 = nbrindx(j, k1)
+            j1 = nbrindx(k1,j)
             call ForceB(j,k1, k,j1, CE3body_b(2)) !BO_jk
 
-            do n1=1, nbrlist(j,0)
+            do n1=1, nbrlist(0,j)
                coeff(1:3) = CE3body_d(1) + CEval(6)*BO(0,j,n1)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
-               n  = nbrlist(j, n1)
-               j1 = nbrindx(j, n1)
+               n  = nbrlist(n1,j)
+               j1 = nbrindx(n1,j)
                call ForceBbo(j,n1, n,j1, coeff) 
             enddo
 
@@ -566,15 +566,15 @@ call system_clock(ti,tk)
 do i=1, NATOMS
    ity = itype(i)
 
-   do j1=1, nbrlist(i,0)
-      j = nbrlist(i,j1)
+   do j1=1, nbrlist(0,i)
+      j = nbrlist(j1,i)
       jty = itype(j)
 
       if( (jty==2) .and. (BO(0,i,j1)>MINBO0) ) then
 
-          do kk=1, nbplist(i,0)
+          do kk=1, nbplist(0,i)
 
-            k = nbplist(i,kk)
+            k = nbplist(kk,i)
 
             kty = itype(k)
 
@@ -614,7 +614,7 @@ do i=1, NATOMS
                   CEhb(2) =-0.5d0*phb1(inxnhb)*(1.d0 - exp_hb2)*exp_hb3*cos_xhz1
                   CEhb(3) =-PEhb*phb3(inxnhb)*( -r0hb(inxnhb)/rjk(0)**2 + 1.d0/r0hb(inxnhb) )*(1.d0/rjk(0))
 
-                  i1 = nbrindx(i,j1)
+                  i1 = nbrindx(j1,i)
                   call ForceB(i,j1, j,i1, CEhb(1))
                   call ForceA3(CEhb(2), i,j,k, rij, rjk)
    
@@ -627,7 +627,7 @@ do i=1, NATOMS
                endif ! if(rik2<rchb2)
             endif
 
-        enddo !do kk=1, nbplist(i,0)
+        enddo !do kk=1, nbplist(0,i)
 
       endif ! if(BO(0,j,i1)>MINBO0)
    enddo 
@@ -687,8 +687,8 @@ do i=1, NATOMS
 
    qic = q(i) + Zpqeq(ity)
 
-   do j1 = 1, nbplist(i,0) 
-         j = nbplist(i,j1)
+   do j1 = 1, nbplist(0,i) 
+         j = nbplist(j1,i)
 
          jid = gtype(j)
 
@@ -762,7 +762,7 @@ do i=1, NATOMS
 
          endif
 
-    enddo  !do j1 = 1, nbplist(i,0) 
+    enddo  !do j1 = 1, nbplist(0,i) 
 enddo
 !$omp end do
 
@@ -793,9 +793,9 @@ do i=1, NATOMS
    ity = itype(i)
 
    iid = gtype(i)
-   do j1 = 1, nbrlist(i,0)
+   do j1 = 1, nbrlist(0,i)
 
-      j = nbrlist(i,j1)
+      j = nbrlist(j1,i)
       jid = gtype(j)
       if(jid<iid) then
 
@@ -811,7 +811,7 @@ do i=1, NATOMS
         CEbo = -Desig(inxn)*exp_be12*( 1.d0 - pbe1(inxn)*pbe2(inxn)*BO(1,i,j1)**pbe2(inxn) )
         coeff(1:3)= (/ CEbo, -Depi(inxn), -Depipi(inxn) /)
 
-        i1 = nbrindx(i,j1)
+        i1 = nbrindx(j1,i)
         call ForceBbo(i,j1, j,i1, coeff)
 
       endif
@@ -867,13 +867,13 @@ do j=1,NATOMS
   delta_ang_j = delta(j) + Val(jty) - Valangle(jty)
   jid = gtype(j)
 
-  do k1=1, nbrlist(j,0) 
+  do k1=1, nbrlist(0,j) 
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
      BOjk = BO(0,j,k1) - cutof2_esub
      if(BO(0,j,k1) > cutof2_esub) then         !poten.f,line 1829,1830
 
-        k = nbrlist(j,k1)
+        k = nbrlist(k1,j)
         kid = gtype(k)
 
         if (jid<kid) then
@@ -886,7 +886,7 @@ do j=1,NATOMS
         rjk(1:3) = pos(1:3,j) - pos(1:3,k)
         rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
          
-        do i1=1, nbrlist(j,0)
+        do i1=1, nbrlist(0,j)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
            BOij = BO(0,j,i1) - cutof2_esub
@@ -894,7 +894,7 @@ do j=1,NATOMS
 !--- NOTICE: cutoff condition to ignore bonding.
            if((BO(0,j,i1)>cutof2_esub) .and. ((BO(0,j,i1)*BO(0,j,k1))>cutof2_esub)) then !poten.f from iv() calculataion
 
-           i=nbrlist(j,i1)
+           i=nbrlist(i1,j)
 
            if (i/=k) then
 
@@ -914,7 +914,7 @@ do j=1,NATOMS
 
               call cross_product(rij, rjk, crs_ijk)
 
-              do l1=1, nbrlist(k,0)
+              do l1=1, nbrlist(0,k)
 
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
                  BOkl = BO(0,k,l1) - cutof2_esub
@@ -922,7 +922,7 @@ do j=1,NATOMS
 !--- NOTE: cutof2_esub is used as the BO cutoff in the original ReaxFF code.
                  if((BO(0,k,l1)>cutof2_esub).and.(BO(0,j,k1)*BO(0,k,l1)>cutof2_esub)) then !poten.f,line 1829,1830
 
-                 l=nbrlist(k,l1)
+                 l=nbrlist(l1,k)
                  lty = itype(l)
                  inxn = inxn4(ity,jty,kty,lty)
 
@@ -1029,7 +1029,7 @@ do j=1,NATOMS
                  call ForceD(j, CEtors(3))
                  call ForceD(k, CEtors(3))
 
-                 j1 = nbrindx(j, i1)
+                 j1 = nbrindx(i1,j)
                  call ForceB(i,j1, j,i1, C4body_b(1))
 
 !--- To take care of the derivative of BOpi(j,k), add <Ctors(2)> to 
@@ -1037,10 +1037,10 @@ do j=1,NATOMS
 !--- component.
                  C4body_b_jk(1:3) = C4body_b(2) + (/0.d0, CEtors(2), 0.d0 /)
 
-                 j1 = nbrindx(j, k1)
+                 j1 = nbrindx(k1,j)
                  call ForceBbo(j,k1, k,j1, C4body_b_jk)
 
-                 k2 = nbrindx(k, l1)
+                 k2 = nbrindx(l1,k)
                  call ForceB(k,l1, l,k2, C4body_b(3))
 
                  call ForceA3(C4body_a(1), i,j,k, rij,rjk)
@@ -1084,9 +1084,9 @@ real(8),intent(IN) :: coeff
 integer :: i1, j,j1
 real(8) :: Cbond(3), dr(3), ff(3)
 
-do j1=1, nbrlist(i,0)
-  j  = nbrlist(i,j1)
-  i1 = nbrindx(i,j1)
+do j1=1, nbrlist(0,i)
+  j  = nbrlist(j1,i)
+  i1 = nbrindx(j1,i)
 
   Cbond(1) = coeff*(A0(i,j1) + BO(0,i,j1)*A1(i,j1) )! Coeff of BOp
   dr(1:3) = pos(1:3,i)-pos(1:3,j)

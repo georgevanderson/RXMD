@@ -355,7 +355,7 @@ logical :: isFound
 integer :: ti,tj,tk
 call system_clock(ti,tk)
 
-nbrlist(:,0) = 0
+nbrlist(0,:) = 0
 
 !$omp parallel do default(shared) collapse(3) & 
 !$omp private(c1,c2,c3,ic,c4,c5,c6,n,n1,m,m1,nty,mty,inxn,dr,dr2) 
@@ -383,8 +383,8 @@ DO c3=-nlayer, cc(3)-1+nlayer
              dr2 = sum(dr(1:3)*dr(1:3))
 
              if(dr2<rc2(inxn)) then 
-                nbrlist(m, 0) = nbrlist(m, 0) + 1
-                nbrlist(m, nbrlist(m, 0)) = n
+                nbrlist(0,m) = nbrlist(0,m) + 1
+                nbrlist(nbrlist(0,m),m) = n
              endif 
            endif
 
@@ -401,24 +401,24 @@ enddo; enddo; enddo
 
 !$omp parallel do default(shared) private(i,i1,j,j1,isFound)
 do i=1, copyptr(6)
-   do i1 = 1, nbrlist(i,0)
-      j = nbrlist(i,i1)
+   do i1 = 1, nbrlist(0,i)
+      j = nbrlist(i1,i)
       isFound=.false.
-      do j1 = 1, nbrlist(j,0)
-         if(i == nbrlist(j,j1)) then
-            nbrindx(i,i1)=j1
+      do j1 = 1, nbrlist(0,j)
+         if(i == nbrlist(j1,j)) then
+            nbrindx(i1,i)=j1
             isFound=.true.
          endif
       enddo
       if(.not.isFound) &
       print'(a,i6,30i4)','ERROR: inconsistency between nbrlist and nbrindx found', &
-           myid, i,nbrlist(i,0:nbrlist(i,0)), j, nbrlist(j,0:nbrlist(j,0))
+           myid, i,nbrlist(0:nbrlist(0,i),i), j, nbrlist(0:nbrlist(0,j),j)
    enddo
 enddo
 !$omp end parallel do
 
 !--- error trap
-n=maxval(nbrlist(1:NATOMS,0))
+n=maxval(nbrlist(0,1:NATOMS))
 if(n > MAXNEIGHBS) then
    write(6,'(a45,2i5)') "ERROR: overflow of max # in neighbor list, ", myid, n
    call MPI_FINALIZE(ierr)
@@ -427,7 +427,7 @@ endif
 
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
-  maxas(nstep/pstep+1,2)=maxval(nbrlist(1:NATOMS,0))
+  maxas(nstep/pstep+1,2)=maxval(nbrlist(0,1:NATOMS))
 endif
 
 call system_clock(tj,tk)
@@ -451,7 +451,7 @@ integer :: ti,tj,tk
 call system_clock(ti,tk)
 
 ! reset non-bonding pair list
-nbplist(:,0)=0
+nbplist(0,:)=0
 
 !$omp parallel do default(shared),private(c1,c2,c3,c4,c5,c6,i,j,m,n,mn,iid,jid,dr,dr2)
 do c1=0, nbcc(1)-1
@@ -475,8 +475,8 @@ do c3=0, nbcc(3)-1
                dr2 = sum(dr(1:3)*dr(1:3))
 
                if(dr2<=rctap2) then
-                 nbplist(i,0)=nbplist(i,0)+1
-                 nbplist(i,nbplist(i,0))=j
+                 nbplist(0,i)=nbplist(0,i)+1
+                 nbplist(nbplist(0,i),i)=j
                endif
 
             endif
