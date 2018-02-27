@@ -341,7 +341,7 @@ do j=1, NATOMS
    sum_BO8 = 0.d0
    sum_SBO1 = 0.d0
    do n1=1, nbrlist(0,j)
-      sum_BO8 = sum_BO8 - BO(0,j,n1)**8.d0
+      sum_BO8 = sum_BO8 - BO(0,n1,j)**8.d0
       sum_SBO1 = sum_SBO1 + BO(2,n1,j) + BO(3,n1,j)
    enddo
    prod_SBO = exp(sum_BO8)
