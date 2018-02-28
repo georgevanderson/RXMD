@@ -175,6 +175,8 @@ real(8) :: astr(6)
 
 !--- coefficient of bonding energy derivative 
 real(8),allocatable :: ccbnd(:)
+real(8),allocatable :: ccbnd_private(:)
+!$omp threadprivate(ccbnd_private)
 
 real(8) :: HH(3,3,0:1), HHi(3,3), MDBOX, LBOX(0:3), OBOX(1:3) !MD box, local MD box, origin of box.
 integer :: NATOMS         !local # of atoms

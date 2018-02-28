@@ -132,6 +132,7 @@ call allocatord2d(v,1,3,1,NBUFFER)
 call allocatord2d(f,1,3,1,NBUFFER)
 !$omp parallel
 call allocatord2d(f_private,1,3,1,NBUFFER)
+call allocatord1d(ccbnd_private,1,NBUFFER)
 !$omp end parallel
 
 !--- For PQEq

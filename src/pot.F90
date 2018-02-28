@@ -45,6 +45,7 @@ CALL BOCALC(NMINCELL, atype, pos)
 !$omp end parallel
 !$omp parallel default(shared)
 f_private(:,:) = 0.d0
+ccbnd_private(:) = 0.d0
 CALL ENbond()
 CALL Ebond()
 CALL Elnpr()
@@ -59,6 +60,8 @@ do i = 1, NBUFFER
   f(2,i) = f(2,i) + f_private(2,i)
   !$omp atomic
   f(3,i) = f(3,i) + f_private(3,i)
+  !$omp atomic
+  ccbnd(i) = ccbnd(i) + ccbnd_private(i)
 enddo
 !$omp end parallel 
 
@@ -1098,10 +1101,8 @@ do j1=1, nbrlist(0,i)
   Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
   Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
-!$omp atomic
-  ccbnd(i)=ccbnd(i)+Cbond(2)
-!$omp atomic
-  ccbnd(j)=ccbnd(j)+Cbond(3)
+  ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
+  ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
 
 enddo
 
@@ -1133,10 +1134,8 @@ f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
 Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
 Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
-!$omp atomic
-ccbnd(i)=ccbnd(i)+Cbond(2)
-!$omp atomic
-ccbnd(j)=ccbnd(j)+Cbond(3)
+ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
+ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
 
 return
 end subroutine
@@ -1172,10 +1171,8 @@ cBO(1:3) = (/cf(1)*BO(0,j1,i),  cf(2)*BO(2,j1,i),  cf(3)*BO(3,j1,i) /)
 Cbond(2)=cBO(1)*A2(j1,i) + (cBO(2)+cBO(3))*A3(j1,i)
 Cbond(3)=cBO(1)*A2(i1,j) + (cBO(2)+cBO(3))*A3(i1,j)
 
-!$omp atomic
-ccbnd(i)=ccbnd(i)+Cbond(2)
-!$omp atomic
-ccbnd(j)=ccbnd(j)+Cbond(3)
+ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
+ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
 
 return
 end subroutine
