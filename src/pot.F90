@@ -283,10 +283,10 @@ do i=1, NATOMS
       coeff(1:3) = CElp_b + (/0.d0, CElp_bpp, CElp_bpp/) 
 
       i1=nbrindx(j1,i)
-      call ForceBbo(i,j1, j,i1, coeff)
+      call ForceBbo(i,j1, j,i1, coeff, f_private, ccbnd_private)
 
       CElp_d  = CEover(6) + CEunder(5)
-      call ForceD(j, CElp_d)
+      call ForceD(j, CElp_d, f_private, ccbnd_private)
    enddo
 
 enddo ! i-loop
@@ -503,23 +503,23 @@ do j=1, NATOMS
 
 !--- Force calculation
             j1 = nbrindx(i1,j)
-            call ForceB(i,j1, j,i1, CE3body_b(1)) !BO_ij
+            call ForceB(i,j1, j,i1, CE3body_b(1), f_private, ccbnd_private) !BO_ij
 
             j1 = nbrindx(k1,j)
-            call ForceB(j,k1, k,j1, CE3body_b(2)) !BO_jk
+            call ForceB(j,k1, k,j1, CE3body_b(2), f_private, ccbnd_private) !BO_jk
 
             do n1=1, nbrlist(0,j)
                coeff(1:3) = CE3body_d(1) + CEval(6)*BO(0,n1,j)**7 + (/0.d0, CEval(5),  CEval(5)/)
 
                n  = nbrlist(n1,j)
                j1 = nbrindx(n1,j)
-               call ForceBbo(j,n1, n,j1, coeff) 
+               call ForceBbo(j,n1, n,j1, coeff, f_private, ccbnd_private) 
             enddo
 
-            call ForceD(i, CE3body_d(2))
-            call ForceD(k, CE3body_d(3))
+            call ForceD(i, CE3body_d(2), f_private, ccbnd_private)
+            call ForceD(k, CE3body_d(3), f_private, ccbnd_private)
 
-            call ForceA3(CE3body_a, i, j, k, rij, rjk) 
+            call ForceA3(CE3body_a, i, j, k, rij, rjk, f_private)
 
          endif !inxn3
          endif ! if(BOij*BOjk>MINBO0) then
@@ -618,8 +618,8 @@ do i=1, NATOMS
                   CEhb(3) =-PEhb*phb3(inxnhb)*( -r0hb(inxnhb)/rjk(0)**2 + 1.d0/r0hb(inxnhb) )*(1.d0/rjk(0))
 
                   i1 = nbrindx(j1,i)
-                  call ForceB(i,j1, j,i1, CEhb(1))
-                  call ForceA3(CEhb(2), i,j,k, rij, rjk)
+                  call ForceB(i,j1, j,i1, CEhb(1), f_private, ccbnd_private)
+                  call ForceA3(CEhb(2), i,j,k, rij, rjk, f_private)
    
                   ff(1:3) = CEhb(3)*rjk(1:3)
 
@@ -815,7 +815,7 @@ do i=1, NATOMS
         coeff(1:3)= (/ CEbo, -Depi(inxn), -Depipi(inxn) /)
 
         i1 = nbrindx(j1,i)
-        call ForceBbo(i,j1, j,i1, coeff)
+        call ForceBbo(i,j1, j,i1, coeff, f_private, ccbnd_private)
 
       endif
 
@@ -1029,11 +1029,11 @@ do j=1,NATOMS
                  C4body_b(1:3) = CEconj(1:3) + CEtors(4:6) !dBOij, dBOjk, dBOkl
                  C4body_a(1:3) = CEconj(4:6) + CEtors(7:9) !ijk, jkl, ijkl
 
-                 call ForceD(j, CEtors(3))
-                 call ForceD(k, CEtors(3))
+                 call ForceD(j, CEtors(3), f_private, ccbnd_private)
+                 call ForceD(k, CEtors(3), f_private, ccbnd_private)
 
                  j1 = nbrindx(i1,j)
-                 call ForceB(i,j1, j,i1, C4body_b(1))
+                 call ForceB(i,j1, j,i1, C4body_b(1), f_private, ccbnd_private)
 
 !--- To take care of the derivative of BOpi(j,k), add <Ctors(2)> to 
 !--- the full BOjk derivative coefficient <C4body_b(2)>, but only pi-bond 
@@ -1041,14 +1041,14 @@ do j=1,NATOMS
                  C4body_b_jk(1:3) = C4body_b(2) + (/0.d0, CEtors(2), 0.d0 /)
 
                  j1 = nbrindx(k1,j)
-                 call ForceBbo(j,k1, k,j1, C4body_b_jk)
+                 call ForceBbo(j,k1, k,j1, C4body_b_jk, f_private, ccbnd_private)
 
                  k2 = nbrindx(l1,k)
-                 call ForceB(k,l1, l,k2, C4body_b(3))
+                 call ForceB(k,l1, l,k2, C4body_b(3), f_private, ccbnd_private)
 
-                 call ForceA3(C4body_a(1), i,j,k, rij,rjk)
-                 call ForceA3(C4body_a(2), j,k,l, rjk,rkl)
-                 call ForceA4(C4body_a(3), i,j,k,l, rij,rjk,rkl)
+                 call ForceA3(C4body_a(1), i,j,k, rij,rjk, f_private)
+                 call ForceA3(C4body_a(2), j,k,l, rjk,rkl, f_private)
+                 call ForceA4(C4body_a(3), i,j,k,l, rij,rjk,rkl, f_private)
 
                  endif ! if( (BO(0,j,i1)*BO(0,j,k1)**2*BO(0,k,l1)) >MINBO0)
                  endif ! if ((inxn/=0).and.(i/=l).and.(j/=l))
@@ -1077,15 +1077,15 @@ it_timer(12)=it_timer(12)+(tj-ti)
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceD(i, coeff)
-use atoms
+subroutine ForceD(i, coeff, f_p, ccbnd_p)
+use atoms, only: A0, A1, A2, BO, dBOp, nbrlist, nbrindx
 ! Calculate force from derivative of delta(i). 
 !-----------------------------------------------------------------------------------------
 implicit none
 integer,intent(IN) :: i
 real(8),intent(IN) :: coeff
 integer :: i1, j,j1
-real(8) :: Cbond(3), dr(3), ff(3)
+real(8) :: Cbond(3), dr(3), ff(3), f_p(1:3,NBUFFER), ccbnd_p(NBUFFER)
 
 do j1=1, nbrlist(0,i)
   j  = nbrlist(j1,i)
@@ -1095,14 +1095,14 @@ do j1=1, nbrlist(0,i)
   dr(1:3) = pos(1:3,i)-pos(1:3,j)
   ff(1:3) = Cbond(1)*dBOp(j1,i)*dr(1:3)
 
-  f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
-  f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
+  f_p(1:3,i) = f_p(1:3,i) - ff(1:3)
+  f_p(1:3,j) = f_p(1:3,j) + ff(1:3)
 
   Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
   Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
-  ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
-  ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
+  ccbnd_p(i)=ccbnd_p(i)+Cbond(2)
+  ccbnd_p(j)=ccbnd_p(j)+Cbond(3)
 
 enddo
 
@@ -1110,8 +1110,9 @@ return
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceB(i,j1, j,i1,coeff)
-use atoms
+subroutine ForceB(i,j1, j,i1,coeff, f_p, ccbnd_p)
+use atoms, only: A0, A1, A2, BO, dBOp
+use base, only: pos
 ! Derivative of BOij using new bond order definition. Only difference is that sigma BO
 ! prime is replaced with full BOp. The derivative of BO becomes a bit simpler due to 
 ! the new definition.
@@ -1120,35 +1121,36 @@ implicit none
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff
 
-real(8) :: Cbond(3),dr(3),ff(3)
+real(8) :: Cbond(3),dr(3),ff(3), f_p(1:3,NBUFFER), ccbnd_p(NBUFFER)
 
 Cbond(1) = coeff*(A0(j1,i) + BO(0,j1,i)*A1(j1,i) )! Coeff of BOp
 
 dr(1:3) = pos(1:3,i) - pos(1:3,j)
 ff(1:3) = Cbond(1)*dBOp(j1,i)*dr(1:3)
 
-f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
-f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
+f_p(1:3,i) = f_p(1:3,i) - ff(1:3)
+f_p(1:3,j) = f_p(1:3,j) + ff(1:3)
 
 !--- A3 is not necessary anymore with the new BO def. 
 Cbond(2)=coeff*BO(0,j1,i)*A2(j1,i) ! Coeff of deltap_i
 Cbond(3)=coeff*BO(0,j1,i)*A2(i1,j) ! Coeff of deltap_j
 
-ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
-ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
+ccbnd_p(i)=ccbnd_p(i)+Cbond(2)
+ccbnd_p(j)=ccbnd_p(j)+Cbond(3)
 
 return
 end subroutine
 
 !-----------------------------------------------------------------------------------------
-subroutine ForceBbo(i,j1, j,i1, coeff)
-use atoms
+subroutine ForceBbo(i,j1, j,i1, coeff, f_p, c_p)
+use atoms, only: A0, A1, BO, dln_BOp, dBOp, A2, A3
+use base, only: pos
 ! Calculate force from derivative of BOij using different coefficient values 
 !-----------------------------------------------------------------------------------------
 implicit none
 integer,intent(IN) :: i,j1, j,i1
 real(8),intent(IN) :: coeff(3)
-real(8) :: Cbond(3),dr(3), ff(3),cBO(3),cf(3)
+real(8) :: Cbond(3),dr(3), ff(3),cBO(3),cf(3),f_p(1:3,NBUFFER), c_p(NBUFFER)
 
 !--- With the new bond-order definition, 1st term is the derivative of
 !"full"-bond order,
@@ -1162,8 +1164,8 @@ Cbond(1) = cf(1)*(A0(j1,i) + BO(0,j1,i)*A1(j1,i))*dBOp(j1,i)        & !full BO
 dr(1:3) = pos(1:3,i)-pos(1:3,j)
 ff(1:3) = Cbond(1)*dr(1:3)
 
-f_private(1:3,i) = f_private(1:3,i) - ff(1:3)
-f_private(1:3,j) = f_private(1:3,j) + ff(1:3)
+f_p(1:3,i) = f_p(1:3,i) - ff(1:3)
+f_p(1:3,j) = f_p(1:3,j) + ff(1:3)
 
 !--- 1st element is "full"-bond order.
 cBO(1:3) = (/cf(1)*BO(0,j1,i),  cf(2)*BO(2,j1,i),  cf(3)*BO(3,j1,i) /)
@@ -1171,15 +1173,14 @@ cBO(1:3) = (/cf(1)*BO(0,j1,i),  cf(2)*BO(2,j1,i),  cf(3)*BO(3,j1,i) /)
 Cbond(2)=cBO(1)*A2(j1,i) + (cBO(2)+cBO(3))*A3(j1,i)
 Cbond(3)=cBO(1)*A2(i1,j) + (cBO(2)+cBO(3))*A3(i1,j)
 
-ccbnd_private(i)=ccbnd_private(i)+Cbond(2)
-ccbnd_private(j)=ccbnd_private(j)+Cbond(3)
+c_p(i)=c_p(i)+Cbond(2)
+c_p(j)=c_p(j)+Cbond(3)
 
 return
 end subroutine
 
-
 !-----------------------------------------------------------------------------------------
-subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2)
+subroutine ForceA4(coeff, i, j, k, l, da0, da1, da2, f_p)
 use atoms
 ! derivative of <cos_ijkl>
 !-----------------------------------------------------------------------------------------
@@ -1194,7 +1195,7 @@ integer,INTENT(IN) :: i,j,k,l
 real(8),INTENT(IN) :: coeff, da0(0:3), da1(0:3), da2(0:3)
 real(8) :: Daa(-1:0), Caa(-2:0,-2:0),Cwi(3), Cwj(3), Cwl(3)
 real(8) :: DDisqr, coDD, com
-real(8) :: fij(3), fjk(3), fkl(3), fijjk(3), fjkkl(3)
+real(8) :: fij(3), fjk(3), fkl(3), fijjk(3), fjkkl(3), f_p(1:3,NBUFFER)
 real(8) :: rij(3), rjk(3), rkl(3)
 
 Caa( 0,0)=da0(0)*da0(0);Caa( 0,-1)=sum(da0(1:3)*da1(1:3));Caa( 0,-2)=sum(da0(1:3)*da2(1:3))
@@ -1237,13 +1238,13 @@ fkl(1:3) =-coDD*( Cwl(1)*rij(1:3) + Cwl(2)*rjk(1:3) + Cwl(3)*rkl(1:3) )
 fijjk(1:3)= -fij(1:3) + fjk(1:3)
 fjkkl(1:3)= -fjk(1:3) + fkl(1:3)
 
-f_private(1:3,i) = f_private(1:3,i) + fij(1:3) 
+f_p(1:3,i) = f_p(1:3,i) + fij(1:3) 
 
-f_private(1:3,j) = f_private(1:3,j) + fijjk(1:3)
+f_p(1:3,j) = f_p(1:3,j) + fijjk(1:3)
 
-f_private(1:3,k) = f_private(1:3,k) + fjkkl(1:3)
+f_p(1:3,k) = f_p(1:3,k) + fjkkl(1:3)
 
-f_private(1:3,l) = f_private(1:3,l) - fkl(1:3)
+f_p(1:3,l) = f_p(1:3,l) - fkl(1:3)
 
 !--- Check N3rd ---
 !  print'(a,5f20.13)','N3rd: ',Cwi(1)-Cwi(2)+Cwj(1), Cwi(2)-Cwi(3)+Cwk(1), &
@@ -1252,7 +1253,7 @@ f_private(1:3,l) = f_private(1:3,l) - fkl(1:3)
 end subroutine
 
 !-----------------------------------------------------------------------
-subroutine ForceA3(coeff,i,j,k,da0, da1)
+subroutine ForceA3(coeff,i,j,k,da0, da1, f_p)
 use atoms
 ! derivative of <cos_ijk>
 !-----------------------------------------------------------------------
@@ -1262,7 +1263,7 @@ implicit none
 real(8),INTENT(IN) :: coeff, da0(0:3), da1(0:3)
 integer,INTENT(IN) :: i,j,k
 real(8) :: Caa(-2:0,-2:0), Ci(3), Ck(3)
-real(8) :: fij(3), fjk(3), fijjk(3), rij(3), rjk(3)
+real(8) :: fij(3), fjk(3), fijjk(3), rij(3), rjk(3), f_p(1:3,NBUFFER)
 real(8) :: CCisqr, coCC
 
 Caa( 0,0) = da0(0)**2; Caa( 0,-1) = sum(da0(1:3)*da1(1:3))
@@ -1286,11 +1287,11 @@ fij(1:3) = coCC*(Ci(1)*rij(1:3) + Ci(2)*rjk(1:3))
 fjk(1:3) =-coCC*(Ck(1)*rij(1:3) + Ck(2)*rjk(1:3))
 fijjk(1:3) =  -fij(1:3) + fjk(1:3) 
 
-f_private(1:3,i) = f_private(1:3,i) + fij(1:3)
+f_p(1:3,i) = f_p(1:3,i) + fij(1:3)
 
-f_private(1:3,j) = f_private(1:3,j) + fijjk(1:3)
+f_p(1:3,j) = f_p(1:3,j) + fijjk(1:3)
 
-f_private(1:3,k) = f_private(1:3,k) - fjk(1:3)
+f_p(1:3,k) = f_p(1:3,k) - fjk(1:3)
 
 !--- Check N3rd ---
 !print'(a,6f20.13)','N3rd: ', &
