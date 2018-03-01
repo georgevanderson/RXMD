@@ -359,8 +359,8 @@ do j=1, NATOMS
       i=nbrlist(i1,j)
       ity = itype(i)
 
-      rij(1:3) = pos(1:3,i) - pos(1:3,j)
-      rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
+      rij(0) = dist(0,i1,j)
+      rij(1:3) = dist(1:3,i1,j)
 
       do k1=i1+1, nbrlist(0,j)
 
@@ -373,8 +373,8 @@ do j=1, NATOMS
          k=nbrlist(k1,j)
          kty = itype(k)
 
-         rjk(1:3) = pos(1:3,j) - pos(1:3,k)
-         rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )  
+         rjk(0) = dist(0,k1,j)
+         rjk(1:3) = -dist(1:3,k1,j)
 
          cos_ijk = -sum( rij(1:3)*rjk(1:3) ) / ( rij(0) * rjk(0) ) 
          if(cos_ijk>MAXANGLE) cos_ijk = MAXANGLE
@@ -590,11 +590,11 @@ do i=1, NATOMS
 
                if(rik2<rchb2) then
    
-                  rjk(1:3) = pos(1:3,j) - pos(1:3,k)
-                  rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
+                  rjk(0) = dist(0, kk, j)
+                  rjk(1:3) = -dist(1:3, kk, j)
    
-                  rij(1:3) = pos(1:3,i) - pos(1:3,j)
-                  rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )  
+                  rij(0) = dist(0, j1, i)
+                  rij(1:3) = -dist(1:3, j1, i)
    
                   cos_ijk = -sum( rij(1:3)*rjk(1:3) ) / (rij(0) * rjk(0) ) 
                   if(cos_ijk>MAXANGLE) cos_ijk = MAXANGLE
@@ -886,8 +886,8 @@ do j=1,NATOMS
         delta_ang_k = delta(k) + Val(kty) - Valangle(kty)
         delta_ang_jk = delta_ang_j + delta_ang_k  
 
-        rjk(1:3) = pos(1:3,j) - pos(1:3,k)
-        rjk(0) = sqrt( sum(rjk(1:3)*rjk(1:3)) )
+        rjk(0) = dist(0, k1, j)
+        rjk(1:3) = -dist(1:3, k1, j)
          
         do i1=1, nbrlist(0,j)
 
@@ -903,8 +903,8 @@ do j=1,NATOMS
 
               ity = itype(i)
 
-              rij(1:3) = pos(1:3,i) - pos(1:3,j)
-              rij(0) = sqrt( sum(rij(1:3)*rij(1:3)) )
+              rij(0) = dist(0, i1, j)
+              rij(1:3) = dist(1:3, i1, j)
 
 !--- Calculate the angle i-j-k
               cos_ijk =-sum(rij(1:3)*rjk(1:3))/(rij(0)*rjk(0))
@@ -934,8 +934,8 @@ do j=1,NATOMS
 !--- NOTICE: cutoff condition to ignore bonding.
                  if( (BO(0,i1,j)*(BO(0,k1,j)**2)*BO(0,l1,k)) > MINBO0) then
 
-                 rkl(1:3) = pos(1:3,k) - pos(1:3,l)
-                 rkl(0) = sqrt( sum(rkl(1:3)*rkl(1:3)) )
+                 rkl(0) = dist(0, l1, k)
+                 rkl(1:3) = -dist(1:3, l1, k)
 
                  exp_tor2(1) = exp(-ptor2(inxn)*BOij)  ! i-j
                  exp_tor2(2) = exp(-ptor2(inxn)*BOjk)  ! j-k

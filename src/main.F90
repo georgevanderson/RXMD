@@ -385,6 +385,8 @@ DO c3=-nlayer, cc(3)-1+nlayer
              if(dr2<rc2(inxn)) then 
                 nbrlist(0,m) = nbrlist(0,m) + 1
                 nbrlist(nbrlist(0,m),m) = n
+                dist(0,nbrlist(0,m),m) = sqrt(dr2)
+                dist(1:3,nbrlist(0,m),m) = dr(1:3)
              endif 
            endif
 

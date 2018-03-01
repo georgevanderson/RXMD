@@ -157,7 +157,7 @@ real(8) :: cutoff_vpar30
 !integer,parameter :: MAXNEIGHBS=50  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 !integer,parameter :: MAXNEIGHBS10=200 !<MAXNEIGHBS>: Max # of Ngbs within the taper function cutoff. 
 
-integer :: NBUFFER=300000
+integer :: NBUFFER=1600000
 integer,parameter :: MAXNEIGHBS=30  !<MAXNEIGHBS>: Max # of Ngbs one atom may have. 
 integer,parameter :: MAXNEIGHBS10=1300 !<MAXNEIGHBS>: Max # of Ngbs within the taper function cutoff.
 
@@ -198,6 +198,9 @@ integer,allocatable :: nbrlist(:,:), nbrindx(:,:)
 
 !<nbplist> neighbor list of nonbonding interaction, non-bonding pair list
 integer,allocatable :: nbplist(:,:)
+
+!<dist> distance of pairs
+real(8),allocatable :: dist(:,:,:)
 
 !<BO> Bond Order of atoms i-j (nearest neighb only) - (Eq 3a-3d)
 real(8),allocatable :: BO(:,:,:) 
@@ -851,6 +854,7 @@ subroutine AllocatorD1D(array, imin, imax)
   integer :: status
   
   allocate(array(imin:imax), stat=status)
+!$omp atomic
   totalMemory = totalMemory + size(array)*8
 
   if(status/=0) print'(a30,i9,i3)', 'ERROR in AllocatorD1D: totalMemory = ', totalMemory, status
