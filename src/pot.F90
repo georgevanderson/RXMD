@@ -3,6 +3,7 @@ subroutine FORCE(atype, pos, f, q)
 use parameters
 !use atoms 
 use pqeq_vars
+use omp_lib, only: omp_get_thread_num, omp_get_num_threads
 !----------------------------------------------------------------------------------------------------------------------
 implicit none
 
@@ -13,6 +14,7 @@ real(8),intent(inout) :: f(3,NBUFFER)
 real(8) :: vdummy(1,1) !-- dummy v for COPYATOM. it works as long as the array dimension matches
 
 integer :: i, j, k
+integer :: tid, chunk, num, offset, ending
 integer :: l2g
 real(8) :: dr(3)
 
@@ -43,7 +45,7 @@ enddo
 !$omp parallel default(shared)
 CALL BOCALC(NMINCELL, atype, pos)
 !$omp end parallel
-!$omp parallel default(shared)
+!$omp parallel default(shared) private(tid,offset,ending,i,j)
 f_private(:,:) = 0.d0
 ccbnd_private(:) = 0.d0
 CALL ENbond()
@@ -53,16 +55,23 @@ CALL Ehb()
 CALL E3b()
 CALL E4b()
 
-do i = 1, NBUFFER
-  !$omp atomic
-  f(1,i) = f(1,i) + f_private(1,i)
-  !$omp atomic
-  f(2,i) = f(2,i) + f_private(2,i)
-  !$omp atomic
-  f(3,i) = f(3,i) + f_private(3,i)
-  !$omp atomic
-  ccbnd(i) = ccbnd(i) + ccbnd_private(i)
+tid = omp_get_thread_num()
+num = omp_get_num_threads()
+chunk = NBUFFER / num
+
+do i = 0, num - 1
+  offset = mod(tid+i, num)
+  if (offset /= num-1) then
+    ending = (offset+1) * chunk
+  else
+    ending = NBUFFER
+  endif
+  do j = offset * chunk + 1, ending
+    f(1:3,j) = f(1:3,j) + f_private(1:3,j)
+    ccbnd(j) = ccbnd(j) + ccbnd_private(j)
+  enddo
 enddo
+
 !$omp end parallel 
 
 if(isEfield) call EEfield(PE(13),NATOMS,pos,q,f,atype,Eev_kcal)
