@@ -66,21 +66,12 @@ select case(isQEq)
 end select
 
 #ifdef QEQDUMP 
-open(91,file="qeqdump"//trim(rankToString(myid))//".txt")
 open(95,file="qdump"//trim(rankToString(myid))//".txt")
-open(94,file="pqeqdump"//trim(rankToString(myid))//".txt")
 #endif
 
-#ifdef PQEQDUMP
-open(92,file="pqeqdump_before"//trim(rankToString(myid))//".txt")
-open(93,file="pqeqdump_after"//trim(rankToString(myid))//".txt")
-#endif
 !--- copy atomic coords and types from neighbors, used in qeq_initialize()
-!print *,"NATOM",NATOMS, NATOMS,na,ne
 call COPYATOMS_SC(MODE_COPY_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 call LINKEDLIST(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
-!print *,"NATOM",NATOMS, NATOMS,na,ne
-!call LINKEDLIST_SC(atype, pos, nblcsize, nbheader, nbllist, nbnacell, nbcc, MAXLAYERS_NB)
 
 call qeq_initialize()
 call get_pqeq_coeff_sc()
@@ -88,25 +79,8 @@ call get_pqeq_coeff_sc()
 #ifdef QEQDUMP 
 do i=1, NATOMS
    write(95,'(i10,es25.15)') i,q(i)
-   do j1=1,nbplist(i,0)
-      j = nbplist(i,j1)
-      write(91,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian(j1,i)
-   enddo
 enddo
 write(95,*) " "
-#endif
-
-#ifdef PQEQDUMP 
-do i=1, NATOMS + na/ne
-   do j1=1,nbplist_sc(0,i)
-      j = nbplist_sc(j1,i)
-         if (l2g(atype(i)) < l2g(atype(j))) then
-          write(94,'(5i6,4es25.15)') nstep, i,j,l2g(atype(i)),l2g(atype(j)),hessian_sc(j1,i)
-       else
-          write(94,'(5i6,4es25.15)') nstep, j,i,l2g(atype(j)),l2g(atype(i)),hessian_sc(j1,i)
-       endif
-   enddo
-enddo
 #endif
 
 !--- after the initialization, only the normalized coords are necessary for COPYATOMS_SC()
@@ -129,36 +103,12 @@ do nstep_qeq=0, nmax-1
   call MPI_ALLREDUCE(qsum, gqsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 #endif
 
-  !call get_hsh(Est)
-  !call get_hsh_sc(Est)
   call get_fast_hsh_sc(Est)
-
-#ifdef PQEQDUMP 
-do i=1, NATOMS
-      write(92,'(i6,2es25.15)') i, hshs(i), hsht(i)
-enddo
-
-#endif
-
-#ifdef DEBUG_CPBK_BEFORE
-print '(a20,i5,4es25.15)', "(hshs,hsht) before", myid, sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
-      sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
-#endif
 
   call COPYATOMS_SC(MODE_CPHSH_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
-#ifdef DEBUG_CPBK
-print '(a20,i5,4es25.15)', "(hshs,hsht) after ", myid, sum(hshs(1:NATOMS)), sum(hsht(1:NATOMS)), &
-      sum(hshs(NATOMS+1:NATOMS+na/ne)), sum(hsht(NATOMS+1:NATOMS+na/ne))
-#endif
-
   call MPI_ALLREDUCE(Est, GEst1, 1, MPI_DOUBLE_PRECISION, MPI_SUM,  MPI_COMM_WORLD, ierr)
 
-#ifdef PQEQDUMP 
-do i=1, NATOMS
-      write(93,'(i6,2es25.15)') i, hshs(i), hsht(i)
-enddo
-#endif
 
 #ifdef QEQDUMP
   if(myid==0) print'(i5,6es25.15)', nstep_qeq, 0.5d0*log(Gnew(1:2)/GNATOMS), GEst1, GEst2, GEst1-GEst2, gqsum
@@ -205,14 +155,9 @@ enddo
 !--- update new charges of buffered atoms.
   call COPYATOMS_SC(MODE_QCOPY1_SC,QCopyDr, atype, pos, vdummy, fdummy, q)
 
-!#ifdef DEBUG_CPBK
-!print '(a20,1es25.15)', "(q)",sum(q(1:NATOMS))
-!#endif
-
 !--- save old residues.  
   Gold(:) = Gnew(:)
   call get_gradient_sc(Gnew)
-  !call get_gradient(Gnew)
 
 !--- get new conjugate direction
   hs(1:NATOMS) = gs(1:NATOMS) + (Gnew(1)/Gold(1))*hs(1:NATOMS)
@@ -224,7 +169,6 @@ enddo
 enddo
 
 !--- for PQEq
-!call update_shell_positions()
 call update_shell_positions_sc()
 
 call system_clock(j1,k1)
@@ -238,77 +182,9 @@ close(91)
 close(95)
 #endif
 
-#ifdef PQEQDUMP 
-close(92)
-close(93)
-close(94)
-#endif
 return 
 
 CONTAINS
-
-!-----------------------------------------------------------------------------------------------------------------------
-subroutine update_shell_positions()
-implicit none
-!-----------------------------------------------------------------------------------------------------------------------
-integer :: i,ity,j,jty,j1,inxn
-real(8) :: shelli(3),shellj(3), qjc, clmb, dclmb, dr2
-real(8) :: sforce(NATOMS,3), sf(3), Esc, Ess
-real(8) :: ff(3)
-
-real(8) :: dr(3)
-
-sforce(1:NATOMS,1:3)=0.d0
-do i=1, NATOMS
-
-   ity = nint(atype(i))
-
-   ! if i-atom is not polarizable, no force acting on i-shell. 
-   if( .not. isPolarizable(ity) ) cycle 
-
-   if(isEfield) sforce(i,eFieldDir) = sforce(i,eFieldDir) + Zpqeq(ity)*eFieldStrength*Eev_kcal
-
-   sforce(i,1:3) = sforce(i,1:3) - Kspqeq(ity)*spos(i,1:3) ! Eq. (37)
-   shelli(1:3) = pos(i,1:3) + spos(i,1:3)
-
-   do j1 = 1, nbplist(i,0)
-
-      j = nbplist(i,j1)
-      jty = nint(atype(j))
-
-      qjc = q(j) + Zpqeq(jty)
-      shellj(1:3) = pos(j,1:3) + spos(j,1:3)
-
-      ! j-atom can be either polarizable or non-polarizable. In either case,
-      ! there will be force on i-shell from j-core.  qjc takes care of the difference.  Eq. (38)
-      dr(1:3)=shelli(1:3)-pos(j,1:3)
-      call get_coulomb_and_dcoulomb_pqeq(dr,alphasc(ity,jty),Esc, inxnpqeq(ity, jty), TBL_Eclmb_psc,sf)
-
-      ff(1:3)=-Cclmb0*sf(1:3)*qjc*Zpqeq(ity)
-      sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
-
-      ! if j-atom is polarizable, there will be force on i-shell from j-shell. Eq. (38)
-      if( isPolarizable(jty) ) then 
-         dr(1:3)=shelli(1:3)-shellj(1:3)
-         call get_coulomb_and_dcoulomb_pqeq(dr,alphass(ity,jty),Ess, inxnpqeq(ity, jty), TBL_Eclmb_pss,sf)
-
-         ff(1:3)=Cclmb0*sf(1:3)*Zpqeq(ity)*Zpqeq(jty)
-         sforce(i,1:3)=sforce(i,1:3)-ff(1:3)
-
-      endif
-
-   enddo
-
-enddo
-
-!--- update shell positions after finishing the shell-force calculation.  Eq. (39)
-do i=1, NATOMS
-   ity = nint(atype(i))
-   if( isPolarizable(ity) ) spos(i,1:3) = spos(i,1:3) + sforce(i,1:3)/Kspqeq(ity)
-enddo
-
-
-end subroutine
 
 !-----------------------------------------------------------------------------------------------------------------------
 subroutine update_shell_positions_sc()
@@ -327,10 +203,6 @@ sforce(1:NBUFFER,1:3)=0.d0
 do i=1, NATOMS + na/ne
 
    ity = nint(atype(i))
-
-   ! if i-atom is not polarizable, no force acting on i-shell. 
-   !if( .not. isPolarizable(ity) ) cycle 
-
 
    !core-i shell-i interaction for resident atoms
    if( isPolarizable(ity) .and. i <= NATOMS ) then
@@ -383,17 +255,9 @@ do i=1, NATOMS + na/ne
 
 enddo
 
-!print *,"before shell update"
-#ifdef DEBUG_CPBK_BEFORE
-print '(a20,i5,3es25.15)', "(sforce) before", myid, sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
-#endif
-
+!--- Shell forces copyback for SC mode
 call COPYATOMS_SC(MODE_CPBKSHELL_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
 
-#ifdef DEBUG_CPBK
-print '(a20,i5,3es25.15)', "(sforce) after ", myid, sum(sforce(1:NATOMS,1)),sum(sforce(1:NATOMS,2)),sum(sforce(1:NATOMS,3))
-#endif
-!print *,"after shell update"
 
 !--- update shell positions after finishing the shell-force calculation.  Eq. (39)
 do i=1, NATOMS
@@ -426,14 +290,8 @@ logical :: sc_test,duplicate_test
 
 call system_clock(ti,tk)
 
-!nbplist(:,0) = 0
 nbplist_sc(0,:) = 0
 fpqeq(:) = 0.d0
-
-!--- Loop over cell near domain boundary to extract NT cell interactions (non-resident cell interaction)
-!--- Determine NT interaction 
-!print '(a,2i10)', "NATOMS,na/ne:",NATOMS, na/ne
-!print '(a,3i10)', "nbcc(:):",nbcc(:)
 
 !$omp parallel do schedule(runtime), default(shared), &
 !$omp private(i,j,ity,jty,n,m,mn,nn,c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6,dr,dr2,drtb,itb,inxn,pqeqc,pqeqs,ff)
@@ -443,28 +301,13 @@ do c3=0, nbcc(3)-1
 
 do mn = 1, nbnmesh_sc
 
+   !--- get the SC computation pattern
    ci1 = c1+nbmesh_sc(1,mn,1)
    ci2 = c2+nbmesh_sc(2,mn,1)
    ci3 = c3+nbmesh_sc(3,mn,1)
    ci4 = c1+nbmesh_sc(1,mn,2)
    ci5 = c2+nbmesh_sc(2,mn,2)
    ci6 = c3+nbmesh_sc(3,mn,2)
-
-!   print '(a,8i4)',"compute:",ci1,ci2,ci3,ci4,ci5,ci6,nbnacell(ci1,ci2,ci3),nbnacell(ci4,ci5,ci6)
-!print '(a,9i5)',"c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6:",c1,c2,c3,ci1,ci2,ci3,ci4,ci5,ci6
-!--- check if cell (ci1,ci2,ci3) or (ci4,ci5,ci6) are resident cells. 
-!--- If at least one of them is resident cell, skipped since it is already computed in the previous loop
-!   if ((ci1 < nbcc(1) .and. ci2 < nbcc(2) .and. ci3 < nbcc(3)) .or. &
-!       (ci4 < nbcc(1) .and. ci5 < nbcc(2) .and. ci6 < nbcc(3))) then
-!#ifdef MATT_DEBUG
-!          print '(a,i4,i4,i4,i4,i4,i4)',"Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
-!#endif
-!          cycle !--one of the interacting cells are resident cells. Skipped
-!   endif
-
-!#if MATT_DEBUG > 1
-!          print '(a,i4,i4,i4,i4,i4,i4)',"Not Cycle:",ci1,ci2,ci3,ci4,ci5,ci6
-!#endif
       
    i = nbheader(ci1,ci2,ci3)
    do m = 1, nbnacell(ci1,ci2,ci3)
@@ -473,9 +316,6 @@ do mn = 1, nbnmesh_sc
 
       j = nbheader(ci4,ci5,ci6)
       do n=1, nbnacell(ci4,ci5,ci6)
-
-!if (nbheader(ci1,ci2,ci3) == nbheader(ci4,ci5,ci6)) print '(a,10i4)',"compute:",ci1,ci2,ci3,ci4,ci5,ci6, & 
-!    nbheader(ci1,ci2,ci3),nbheader(ci4,ci5,ci6),nbnacell(ci1,ci2,ci3),nbnacell(ci4,ci5,ci6)
 
 !--- For interaction of atoms in the same cell, only consider i<j to avoid double counting
 !--- Otherwise, all i in cell (ci1,ci2,ci3) and all j in cell (ci4,ci5,ci6) must be considered
@@ -486,7 +326,6 @@ do mn = 1, nbnmesh_sc
             if(dr2 < rctap2) then
 
                jty = nint(atype(j))
-               !print *,i,j 
 !--- for SC, only one-way neighbor and neighbor atoms in + direction are needed
 !$omp atomic
                nbplist_sc(0,i) = nbplist_sc(0,i) + 1
@@ -496,7 +335,6 @@ do mn = 1, nbnmesh_sc
             ! contribution from core(i)-core(j)
             call get_coulomb_and_dcoulomb_pqeq(dr,alphacc(ity,jty),pqeqc,inxnpqeq(ity, jty),TBL_Eclmb_pcc,ff)
             hessian_sc(nbplist_sc(0,i),i) = Cclmb0_qeq * pqeqc
-
 
             fpqeq(i) = fpqeq(i) + Cclmb0_qeq * pqeqc * Zpqeq(jty) ! Eq. 30
             fpqeq(j) = fpqeq(j) + Cclmb0_qeq * pqeqc * Zpqeq(ity) ! Eq. 30
@@ -530,19 +368,6 @@ do mn = 1, nbnmesh_sc
 enddo; enddo; enddo
 !$omp end parallel do
 
-
-#ifdef DEBUG_CPBK_BEFORE
-print '(a20,i5,2es25.15)', "(fpqeq) before", myid, sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
-#endif
-
-call COPYATOMS_SC(MODE_CPFPQEQ_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
-
-#ifdef DEBUG_CPBK
-print '(a20,i5,2es25.15)', "(fpqeq) after ", myid, sum(fpqeq(1:NATOMS)),sum(fpqeq(NATOMS+1:NATOMS+na/ne))
-#endif
-
-!-------END MATT----------------------------
-
 !--- for array size stat
 if(mod(nstep,pstep)==0) then
   nn=maxval(nbplist_sc(0,1:NATOMS))
@@ -551,31 +376,18 @@ if(mod(nstep,pstep)==0) then
 endif
 
 #ifdef DEBUG_CPBK
-print *,"*******************************************"
-print '(a,2i10)', "myid, Total nbplist_sc",myid,sum(nbplist_sc(0,:))
-print *,"*******************************************"
+!print *,"*******************************************"
+!print '(a,2i10)', "myid, Total nbplist_sc",myid,sum(nbplist_sc(0,:))
+!print *,"*******************************************"
 
 #endif
 
 
 #ifdef MATT_DEBUG
-!--- Compare nbplist and nbplist_sc stat
-!do i = 1,NBUFFER
-!   do j = 1,nbplist(i,0)
-!      print '(a,i10,i10)', "nbplist: ", i,nbplist(i,j)
-!   enddo
-!enddo
-
-!do i = 1,NBUFFER
-!   do j = 1,nbplist_sc(i,0)
-!      print '(a,i10,i10)', "nbplist_sc: ", i,nbplist_sc(i,j)
-!   enddo
-!enddo
-
-print *,"*******************************************"
-print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
-print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(0,:))
-print *,"*******************************************"
+!print *,"*******************************************"
+!print '(a,i10)', "Total nbplist",sum(nbplist(:,0))
+!print '(a,i10)', "Total nbplist_sc",sum(nbplist_sc(0,:))
+!print *,"*******************************************"
 #endif
 
 
@@ -866,15 +678,7 @@ do i=1,NATOMS + na/ne
 enddo 
 !$omp end parallel do
 
-#ifdef DEBUG_CPBK_BEFORE
-print '(a20,i5,2es25.15)', "(gssum,gtsum) before", myid, sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
-#endif
-
 call COPYATOMS_SC(MODE_CPGSGT_SC, QCopyDr, atype, pos, vdummy, fdummy, q)
-
-#ifdef DEBUG_CPBK
-print '(a20,i5,2es25.15)', "(gssum,gtsum) after ", myid, sum(gssum(1:NATOMS)),sum(gtsum(1:NATOMS))
-#endif
 
 do i=1,NATOMS
 
@@ -890,52 +694,6 @@ ggnew(1) = dot_product(gs(1:NATOMS), gs(1:NATOMS))
 ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
 call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
 
-
-call system_clock(tj,tk)
-it_timer(19)=it_timer(19)+(tj-ti)
-
-
-end subroutine
-
-
-!-----------------------------------------------------------------------------------------------------------------------
-subroutine get_gradient(Gnew)
-use atoms; use parameters
-! Update gradient vector <g> and new residue <Gnew>
-!-----------------------------------------------------------------------------------------------------------------------
-implicit none
-real(8),intent(OUT) :: Gnew(2)
-real(8) :: eta_ity, ggnew(2)
-integer :: i,j,j1, ity
-
-real(8) :: lgssum, lgtsum
-
-integer :: ti,tj,tk
-call system_clock(ti,tk)
-
-!$omp parallel do default(shared), schedule(runtime), private(gssum, gtsum, eta_ity,i,j,j1,ity)
-do i=1,NATOMS
-
-   lgssum=0.d0
-   lgtsum=0.d0
-   do j1=1, nbplist(i,0) 
-      j = nbplist(i,j1)
-      lgssum = lgssum + hessian(j1,i)*qs(j)
-      lgtsum = lgtsum + hessian(j1,i)*qt(j)
-   enddo
-
-   ity = nint(atype(i))
-   eta_ity = eta(ity)
-
-   gs(i) = - chi(ity) - eta_ity*qs(i) - lgssum - fpqeq(i)
-   gt(i) = - 1.d0     - eta_ity*qt(i) - lgtsum
-
-enddo 
-!$omp end parallel do
-
-ggnew(1) = dot_product(gs(1:NATOMS), gs(1:NATOMS))
-ggnew(2) = dot_product(gt(1:NATOMS), gt(1:NATOMS))
-call MPI_ALLREDUCE(ggnew, Gnew, size(ggnew), MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
 
 call system_clock(tj,tk)
 it_timer(19)=it_timer(19)+(tj-ti)
