@@ -81,20 +81,22 @@ do i=1, NATOMS
 enddo
 #endif
 
-!--- after the initialization, only the normalized coords are necessary for COPYATOMS()
-!--- The atomic coords are converted back to real at the end of this function.
-call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
-call get_gradient(Gnew)
-
-!--- Let the initial CG direction be the initial gradient direction
-hs(1:NATOMS) = gs(1:NATOMS)
-ht(1:NATOMS) = gt(1:NATOMS)
-
-call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 GEst2=1.d99
 do nstep_qeq=0, nmax-1
-
+!--- update new charges of buffered atoms.
+  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
+  call get_gradient(Gnew)
+!--- get new conjugate direction
+  if (nstep_qeq == 0) then
+      hs(1:NATOMS) = gs(1:NATOMS)
+      ht(1:NATOMS) = gt(1:NATOMS)
+  else 
+      hs(1:NATOMS) = gs(1:NATOMS) + (Gnew(1)/Gold(1))*hs(1:NATOMS)
+      ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
+  end if
+!--- update new conjugate direction for buffered atoms.
+  call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 #ifdef QEQDUMP 
   qsum = sum(q(1:NATOMS))
@@ -148,19 +150,8 @@ do nstep_qeq=0, nmax-1
 !--- update atom charges
   q(1:NATOMS) = qs(1:NATOMS) - mu*qt(1:NATOMS)
 
-!--- update new charges of buffered atoms.
-  call COPYATOMS(MODE_QCOPY1,QCopyDr, atype, pos, vdummy, fdummy, q)
-
 !--- save old residues.  
   Gold(:) = Gnew(:)
-  call get_gradient(Gnew)
-
-!--- get new conjugate direction
-  hs(1:NATOMS) = gs(1:NATOMS) + (Gnew(1)/Gold(1))*hs(1:NATOMS)
-  ht(1:NATOMS) = gt(1:NATOMS) + (Gnew(2)/Gold(2))*ht(1:NATOMS)
-
-!--- update new conjugate direction for buffered atoms.
-  call COPYATOMS(MODE_QCOPY2,QCopyDr, atype, pos, vdummy, fdummy, q)
 
 enddo
 
