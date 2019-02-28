@@ -14,9 +14,9 @@ all: $(TARGETS)
 
 # explicit rules
 geninit: geninit.o
-	$(FC) $(FC_FLAGS) -o $@ $^
-	./geninit
-	cp -v rxff.bin ../DAT
+	$(FC) $(FC_FLAGS) -o ../$@ $^
+#	./geninit
+#cp -v rxff.bin ../DAT
 
 nocopy: geninit.o
 	$(FC) $(FC_FLAGS) -o $@ $^

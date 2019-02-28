@@ -377,7 +377,7 @@ enddo
 !--- To avoid opening too many files, sort atom data using disk
 lbox(1:3)=1.d0/vprocs(1:3)
 lnatoms2(:)=0 ! for atom counting & result check
-open(1,file="all.bin",form="unformatted",access="stream")
+open(1,file=trim(adjustl(outputDirName))//"all.bin",form="unformatted",access="stream")
 do n=1,natoms 
    i=pos1(1,n)*vprocs(1)
    j=pos1(2,n)*vprocs(2)
@@ -404,8 +404,8 @@ do i=0, nprocs-1
 enddo
 
 qq=0.d0; vv(:)=0.d0; qfsp0=0.d0; qfsv0=0.d0
-open(1,file="all.bin",form="unformatted",access="stream")
-open(20,file="geninit.xyz") 
+open(1,file=trim(adjustl(outputDirName))//"all.bin",form="unformatted",access="stream")
+open(20,file=trim(adjustl(outputDirName))//"geninit.xyz") 
 open(30,file=trim(adjustl(outputDirName))//"/rxff.bin",form="unformatted",access="stream")
 write(30) nprocs, vprocs(1:3)
 write(30) lnatoms(0:nprocs-1)
@@ -443,7 +443,7 @@ do myid=0,nprocs-1
 
 enddo
 close(1, status='delete')
-close(20)
+close(20,status='delete')
 close(30)
 
 print'(a60)',repeat('-',60)
