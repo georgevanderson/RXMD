@@ -59,7 +59,8 @@ else
   print'(a)','no coordinate conversion detected '
   return
 endif
-open(40,file=outFile,form="formatted")
+
+open(40,file=trim(adjustl(outputDirName)//outFile,form="formatted")
 
 !--- write header part
 write(40,'(i12,3x,a)') natoms*mc(1)*mc(2)*mc(3),'"'//trim(adjustl(note))//'"'
