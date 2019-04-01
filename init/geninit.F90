@@ -15,9 +15,9 @@ character(3),allocatable :: ctype0(:), ctype1(:)
 integer,allocatable :: itype0(:)
 real(8),allocatable :: itype1(:)
 
-character(256) :: inputFileName="input.xyz"
-character(256) :: ffieldFileName="../ffield"
-character(256) :: outputDirName="."
+character(256) :: inputFileName="inputs/input.xyz"
+character(256) :: ffieldFileName="inputs/ffield"
+character(256) :: outputDirName="data/"
 
 character(256) :: fnote
 
@@ -60,7 +60,7 @@ else
   return
 endif
 
-open(40,file=trim(adjustl(outputDirName)//outFile,form="formatted")
+open(40,file=trim(adjustl(outputDirName))//outFile,form="formatted")
 
 !--- write header part
 write(40,'(i12,3x,a)') natoms*mc(1)*mc(2)*mc(3),'"'//trim(adjustl(note))//'"'
@@ -407,7 +407,7 @@ enddo
 qq=0.d0; vv(:)=0.d0; qfsp0=0.d0; qfsv0=0.d0
 open(1,file=trim(adjustl(outputDirName))//"all.bin",form="unformatted",access="stream")
 open(20,file=trim(adjustl(outputDirName))//"geninit.xyz") 
-open(30,file=trim(adjustl(outputDirName))//"/rxff.bin",form="unformatted",access="stream")
+open(30,file=trim(adjustl(outputDirName))//"rxff.bin",form="unformatted",access="stream")
 write(30) nprocs, vprocs(1:3)
 write(30) lnatoms(0:nprocs-1)
 write(30) 0

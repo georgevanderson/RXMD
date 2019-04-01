@@ -263,7 +263,7 @@ logical :: hasSpringForce(16)
 real(8),allocatable :: ipos(:,:)
 
 logical :: isFF=.false., isData=.false., isMDparm=.false.
-character(MAXSTRLENGTH) :: FFPath="ffield", DataDir="DAT", ParmPath="rxmd.in"
+character(MAXSTRLENGTH) :: FFPath="inputs/ffield", DataDir="data/", ParmPath="inputs/rxmd.in"
 
 logical :: saveRunProfile=.false.
 character(MAXSTRLENGTH) :: RunProfilePath="profile.dat"

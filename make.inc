@@ -3,13 +3,13 @@
 # MPIF90_FLAGS is the flag for MPIF90
 
 MPIF90 = mpif90
-MPIF90_FLAGS = -O3
+MPIF90_FLAGS = -O3 -g
 
 # FC is a fortran compiler and is used to compite geninit.F90 code in init directory so as to create the input configuration for reaxFF simulation
 # FC_FLAGS is the  flag for FC
 
 FC = gfortran
-FC_FLAGS = -O3
+FC_FLAGS = -O3 -g
 
 # LINKER is linker (optional)
 # LIBS are extra needed libraries (optional)
